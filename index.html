@@ -69,6 +69,11 @@ h1 .x{color:var(--amber)}
 .tabs button,.sorts button{font:inherit;font-size:12px;background:var(--panel);color:var(--dim);border:1px solid var(--line);padding:6px 13px;cursor:pointer}
 .tabs button[aria-pressed="true"]{color:#121212;background:var(--amber);border-color:var(--amber);font-weight:600}
 .sorts{margin-left:auto;display:flex;gap:4px}
+.addp{display:flex;gap:4px}
+.addp input{font:inherit;font-size:12px;background:var(--panel);color:var(--fg);border:1px solid var(--line);padding:6px 10px;width:140px;min-width:0}
+.addp input::placeholder{color:var(--dim)}
+.addp button{font:inherit;font-size:12px;background:var(--panel);color:var(--dim);border:1px solid var(--line);padding:6px 10px;cursor:pointer}
+.addp button:hover{color:var(--amber)}
 .sorts button[aria-pressed="true"]{color:var(--fg);border-color:var(--dim)}
 button:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
 
@@ -154,6 +159,7 @@ footer{color:var(--dim);font-size:11px;margin-top:22px;max-width:70ch}
     <button data-sort="px" aria-pressed="false">Price</button>
     <button data-sort="live" aria-pressed="false">Tonight</button>
   </div>
+  <form class="addp" id="addp" hidden><input id="addq" type="search" placeholder="Add player…" autocomplete="off"><button type="submit">Add</button></form>
 </div>
 
 <div class="err" id="err"></div>
@@ -444,6 +450,58 @@ document.getElementById("rows").addEventListener("click", e => {
 });
 addEventListener("resize", () => { if (openId) render(); });
 
+// add any player by name, even below the board floor; remembered in this browser
+async function addPlayerById(id, name, team){
+  if (data.players.some(p => String(p.id) === String(id))) return "already";
+  const p = await loadPlayer(id, name, team, data.season);
+  if (!p.games.length) return "nogames";
+  data.players.push(p);
+  makeSymbols(data.players);
+  render();
+  return "ok";
+}
+document.getElementById("addp").addEventListener("submit", async e => {
+  e.preventDefault();
+  const q = addq.value.trim();
+  if (!q || !data) return;
+  const btn = e.target.querySelector("button");
+  btn.disabled = true; btn.textContent = "…";
+  try {
+    const res = await j(`https://site.web.api.espn.com/apis/search/v2?region=us&lang=en&limit=10&query=${encodeURIComponent(q)}`);
+    let hit = null;
+    for (const r of res.results || []){
+      if (r.type !== "player") continue;
+      hit = (r.contents || []).find(c => /~l:46~a:\d+/.test(c.uid || ""));
+      if (hit) break;
+    }
+    if (!hit){ addq.value = ""; addq.placeholder = "No NBA player found"; }
+    else {
+      const id = hit.uid.match(/~a:(\d+)/)[1];
+      const out = await addPlayerById(id, hit.displayName, hit.subtitle || "");
+      if (out === "ok"){
+        try {
+          const saved = JSON.parse(localStorage.getItem("hwx-added") || "[]");
+          if (!saved.some(s => s.id === id)) saved.push({id, name: hit.displayName, team: hit.subtitle || ""});
+          localStorage.setItem("hwx-added", JSON.stringify(saved));
+        } catch (err) { /* private windows */ }
+        addq.value = ""; addq.placeholder = "Add player…";
+      } else {
+        addq.value = "";
+        addq.placeholder = out === "already" ? "Already on the board" : "No games this season";
+      }
+    }
+  } catch (err) { addq.placeholder = "Search failed"; }
+  btn.disabled = false; btn.textContent = "Add";
+});
+
+async function restoreAdded(){
+  let saved = [];
+  try { saved = JSON.parse(localStorage.getItem("hwx-added") || "[]"); } catch (e) { return; }
+  for (const s of saved){
+    try { await addPlayerById(s.id, s.name, s.team); } catch (e) { /* keep going */ }
+  }
+}
+
 /* ---------- data: snapshot now, live upgrade when the host allows fetch ---------- */
 function useSnapshot(){
   data = {seasonLabel: SNAPSHOT.season, season: 2026, live:false, players: SNAPSHOT.players.filter(qualifies)};
@@ -457,31 +515,35 @@ const API = "https://site.web.api.espn.com/apis/common/v3/sports/basketball/nba"
 const Q = "region=us&lang=en&contentorigin=espn";
 async function j(url){ const r = await fetch(url); if (!r.ok) throw new Error(r.status); return r.json(); }
 
+async function loadPlayer(id, name, team, season){
+  const gl = await j(`${API}/athletes/${id}/gamelog?${Q}&season=${season}`);
+  const names = gl.names || [];
+  const ix = {};
+  for (const k of ["minutes","points","totalRebounds","assists","steals","blocks","threePointFieldGoalsMade-threePointFieldGoalsAttempted"])
+    ix[k] = names.indexOf(k);
+  const num = (stats,k) => { const i = ix[k]; if (i<0 || i>=stats.length) return 0; const v = parseFloat(String(stats[i]).split("-")[0]); return isNaN(v)?0:v; };
+  const games = [];
+  for (const st of gl.seasonTypes || []){
+    if (!/Regular Season/.test(st.displayName || "")) continue;
+    for (const cat of st.categories || [])
+      for (const ev of cat.events || []){
+        const meta = (gl.events || {})[ev.eventId] || {};
+        games.push({d: meta.gameDate || "", opp:(meta.opponent||{}).abbreviation || "",
+          min:num(ev.stats,"minutes"), pts:num(ev.stats,"points"), reb:num(ev.stats,"totalRebounds"),
+          ast:num(ev.stats,"assists"), stl:num(ev.stats,"steals"), blk:num(ev.stats,"blocks"),
+          tpm:num(ev.stats,"threePointFieldGoalsMade-threePointFieldGoalsAttempted")});
+      }
+  }
+  games.sort((x,y) => x.d < y.d ? -1 : 1);
+  return {id: String(id), name, team, games};
+}
+
 async function fetchPlayers(season, page, limit){
   const lead = await j(`${API}/statistics/byathlete?${Q}&limit=${limit}&page=${page}&sort=offensive.avgPoints:desc&season=${season}&seasontype=2`);
   if (!lead.athletes || !lead.athletes.length) return [];
-  return Promise.all(lead.athletes.map(async row => {
+  return Promise.all(lead.athletes.map(row => {
     const a = row.athlete;
-    const gl = await j(`${API}/athletes/${a.id}/gamelog?${Q}&season=${season}`);
-    const names = gl.names || [];
-    const ix = {};
-    for (const k of ["minutes","points","totalRebounds","assists","steals","blocks","threePointFieldGoalsMade-threePointFieldGoalsAttempted"])
-      ix[k] = names.indexOf(k);
-    const num = (stats,k) => { const i = ix[k]; if (i<0 || i>=stats.length) return 0; const v = parseFloat(String(stats[i]).split("-")[0]); return isNaN(v)?0:v; };
-    const games = [];
-    for (const st of gl.seasonTypes || []){
-      if (!/Regular Season/.test(st.displayName || "")) continue;
-      for (const cat of st.categories || [])
-        for (const ev of cat.events || []){
-          const meta = (gl.events || {})[ev.eventId] || {};
-          games.push({d: meta.gameDate || "", opp:(meta.opponent||{}).abbreviation || "",
-            min:num(ev.stats,"minutes"), pts:num(ev.stats,"points"), reb:num(ev.stats,"totalRebounds"),
-            ast:num(ev.stats,"assists"), stl:num(ev.stats,"steals"), blk:num(ev.stats,"blocks"),
-            tpm:num(ev.stats,"threePointFieldGoalsMade-threePointFieldGoalsAttempted")});
-        }
-    }
-    games.sort((x,y) => x.d < y.d ? -1 : 1);
-    return {id:a.id, name:a.displayName, team:a.teamShortName || a.teamName || "", games};
+    return loadPlayer(a.id, a.displayName, a.teamShortName || a.teamName || "", season);
   }));
 }
 
@@ -496,6 +558,7 @@ async function tryLive(){
       makeSymbols(data.players);
       morePage = 5;                       // pages of 25; first 100 are loaded
       moreBtn.hidden = false;
+      document.getElementById("addp").hidden = false;
       document.getElementById("mkt").classList.add("live");
       mktTxt.textContent = `LIVE FEED · ${label} SEASON`;
       foot.textContent = `Price is a player's last-10-game average for the chosen stat; Δ% is that form against their season average. Board floor: 15+ minutes and 8+ points a game. Unofficial fan project. Stats: ESPN public API, ${label} regular season, fetched live on page load.`;
@@ -566,7 +629,7 @@ async function pollLive(){
       // tag board players by team; tip time without the date prefix
       const when = (st.shortDetail || "").replace(/^\d+\/\d+ - /, "");
       for (const p of data.players){
-        const mine = teams.find(t => t.abbreviation === p.team);
+        const mine = teams.find(t => t.abbreviation === p.team || t.displayName === p.team);
         if (!mine || newMap[p.id]) continue;
         const opp = teams.find(t => t !== mine);
         newMap[p.id] = {state:"pre", detail: when, opp: opp ? opp.abbreviation : ""};
@@ -691,7 +754,7 @@ async function fetchReigning(){
 
 useSnapshot();
 if (/(^|[?&#])demo/.test(location.search + location.hash)) runDemo();
-else tryLive().finally(() => { pollLive(); fetchReigning(); });
+else tryLive().finally(() => { restoreAdded().finally(pollLive); fetchReigning(); });
 </script>
 
 </body>
