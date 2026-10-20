@@ -28,10 +28,7 @@ body{background:var(--bg);color:var(--fg);font-family:var(--mono);font-size:13px
 a{color:var(--amber)}
 .num{font-variant-numeric:tabular-nums}
 
-/* ticker tape */
-.tape{overflow:hidden;background:#07090f;border-bottom:1px solid var(--line);white-space:nowrap;position:sticky;top:env(safe-area-inset-top,0px);z-index:5}
-.tape-track{display:inline-block;padding-block:8px;animation:tape 80s linear infinite}
-.tape-track.events{animation:none;transform:none;padding-inline:10px}
+/* play chip (Current box) */
 .ev{animation:pop .45s ease-out both}
 @keyframes pop{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:none}}
 .tape:hover .tape-track{animation-play-state:paused}
@@ -79,7 +76,7 @@ button:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
 /* board */
 .board{border:1px solid var(--line);background:var(--panel)}
 .row,.hd{display:grid;grid-template-columns:30px minmax(130px,1.5fr) 110px 64px 84px 64px;gap:10px;align-items:center;padding:9px 14px}
-.hd{font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--dim);border-bottom:1px solid var(--line);position:sticky;top:33px;background:var(--panel);z-index:2}
+.hd{font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--dim);border-bottom:1px solid var(--line);position:sticky;top:env(safe-area-inset-top,0px);background:var(--panel);z-index:2}
 .row{border-bottom:1px solid var(--line);cursor:pointer;background:none;border-inline:0;border-top:0;width:100%;text-align:left;font:inherit;color:inherit}
 .row:last-of-type{border-bottom:0}
 .row:hover{background:var(--panel2)}
@@ -139,8 +136,6 @@ footer{color:var(--dim);font-size:11px;margin-top:22px;max-width:70ch}
 }
 </style>
 
-<div class="tape" id="tape" aria-hidden="true"><div class="tape-track" id="tapeTrack"></div></div>
-
 <div class="wrap">
 <header>
   <h1>HARDWOOD E<span class="x">X</span>CHANGE</h1>
@@ -150,7 +145,7 @@ footer{color:var(--dim);font-size:11px;margin-top:22px;max-width:70ch}
   <div class="idx" id="potn" hidden><span class="lbl" id="potnLbl">Player of the Night</span><div class="val" id="potnName">—</div><div class="chg num" id="potnLine"></div></div>
   <div class="idx"><span class="lbl">Top Gainer</span><div class="val" id="gainer">—</div><div class="chg num" id="gainerChg"></div></div>
   <div class="idx"><span class="lbl">Top Decliner</span><div class="val" id="loser">—</div><div class="chg num" id="loserChg"></div></div>
-  <div class="idx" id="curr" hidden><span class="lbl">Current</span><div class="games num" id="currGames"></div></div>
+  <div class="idx" id="curr" hidden><span class="lbl">Current</span><div class="games num" id="currGames"></div><div id="currPlay"></div></div>
 </div>
 
 <div class="ctrl">
@@ -185,13 +180,13 @@ let data = null;          // {seasonLabel, live, players:[{id,name,team,games:[.
 let openId = null;
 let liveMap = {};         // playerId -> {state, detail, opp, pts, reb, ast, stl, blk, tpm, min}
 const prevLive = {};      // playerId:statKey -> last shown live value, for change flashes
-let tapeKey = "";         // tape lineup fingerprint: rebuild (and restart) only when it changes
 const autoTried = new Set();  // tonight's scorers we've already tried to pull a season log for
 let pollTimer = null;     // one scheduled poll at a time, even if pollLive is kicked off twice
 
-/* play-by-play: diff each poll's box lines and pop the plays onto the tape */
+/* play-by-play: diff each poll's box lines; the Current box shows one play at a time */
 const prevBox = {};       // playerId -> last seen box line
 const EV_LABEL = {pts:"", reb:" REB", ast:" AST", stl:" STL", blk:" BLK"};
+const playHtml = (name, txt) => `<span class="tk ev"><span class="ldot">●</span><span class="tknm">${name}</span><span class="num up tkdelta">${txt}</span></span>`;
 function emitEvents(id, name, line){
   const prev = prevBox[id];
   prevBox[id] = {pts:line.pts, reb:line.reb, ast:line.ast, stl:line.stl, blk:line.blk};
@@ -199,33 +194,16 @@ function emitEvents(id, name, line){
   const out = [];
   for (const k in EV_LABEL){
     const d = (line[k] || 0) - (prev[k] || 0);
-    if (d > 0) out.push(`<span class="tk ev"><span class="ldot">●</span><span class="tknm">${name}</span><span class="num up tkdelta">+${d}${EV_LABEL[k]}</span></span>`);
+    if (d > 0) out.push(playHtml(name, `+${d}${EV_LABEL[k]}`));
   }
   return out;
 }
-function enterEventMode(seedHtml){
-  tapeTrack.classList.add("events");
-  tapeTrack.innerHTML = seedHtml || "";
-  tapeKey = "evmode";
-}
+const playQueue = [];
 function pushEvents(htmlList){
-  if (!htmlList.length) return;
-  const tmp = document.createElement("div");
-  tmp.innerHTML = htmlList.join("");
-  let i = 0;
-  for (const el of [...tmp.children]){
-    el.style.animationDelay = (i++ * 0.15) + "s";
-    tapeTrack.prepend(el);
-  }
-  while (tapeTrack.children.length > 40) tapeTrack.lastChild.remove();
+  playQueue.push(...htmlList);
+  while (playQueue.length > 30) playQueue.shift();
 }
-function endEventMode(){
-  if (tapeTrack.classList.contains("events")){
-    tapeTrack.classList.remove("events");
-    tapeTrack.innerHTML = "";
-    tapeKey = "";
-  }
-}
+setInterval(() => { if (playQueue.length) currPlay.innerHTML = playQueue.shift(); }, 2300);
 
 /* ---------- symbols ---------- */
 const SUFFIX = /\s+(jr\.?|sr\.?|ii|iii|iv|v)$/i;
@@ -299,27 +277,6 @@ function render(){
   gainer.textContent = g.p.name; gainerChg.textContent = `${arrow(1)} ${sgn(g.m.pct)}%`; gainerChg.className = "chg num up";
   loser.textContent = l.p.name; loserChg.textContent = `${arrow(-1)} ${sgn(l.m.pct)}%`; loserChg.className = "chg num down";
 
-  // tape: during games it is a play-by-play feed managed by the poll (pushEvents);
-  // pre-tip it previews tonight's players, and after the finals it carries their lines
-  if (!tapeTrack.classList.contains("events")){
-    const statLabel = STATS.find(s => s.key === statKey).label;
-    const liveList = players.filter(({p}) => liveMap[p.id]);
-    const key = statKey + "|" + data.players.length + "|" + potnWinnerId + "|" + players.map(x => x.p.sym).join(",") + "|" + liveList.map(x => x.p.sym + ":" + liveMap[x.p.id].state).join(",");
-    if (key !== tapeKey){
-      tapeKey = key;
-      const liveTk = liveList.map(({p}) => {
-        const l = liveMap[p.id];
-        return l.state === "pre"
-          ? `<span class="tk"><span class="ldot">●</span><span class="tknm">${p.name}${potnBadge(p.id)}</span><span class="num last">TONIGHT ${l.detail} vs ${l.opp}</span></span>`
-          : `<span class="tk"><span class="tknm">${p.name}${potnBadge(p.id)}</span><span class="px num livepx">${f1(liveVal(l))} ${statLabel}</span><span class="num last">FINAL vs ${l.opp}</span></span>`;
-      }).join("");
-      const tk = players.map(({p,m}) =>
-        `<span class="tk"><span class="tknm">${p.name}${potnBadge(p.id)}</span><span class="px num">${f1(m.l10)}</span><span class="num ${cls(m.chg)}">${arrow(m.chg)}${sgn(m.pct)}%</span></span>`
-      ).join("");
-      tapeTrack.innerHTML = liveTk + tk + liveTk + tk;
-      tapeTrack.style.animationDuration = Math.max(80, players.length * 3.2) + "s";
-    }
-  }
 
   // rows — on game days, today's slate gets its own section up top
   const rowHTML = ({p,m}, i) => {
@@ -639,18 +596,22 @@ async function pollLive(){
   const nIn = events.filter(e => e.status.type.state === "in").length;
   const nPre = events.filter(e => e.status.type.state === "pre").length;
   if (nIn){
-    if (!tapeTrack.classList.contains("events")){
-      // entering live mode: seed the feed with the current scorers so the tape is never empty
-      const seed = Object.entries(newMap).filter(([id, l]) => l.state === "in" && l.pts > 0)
-        .sort((x, y) => y[1].pts - x[1].pts)
-        .map(([id, l]) => {
-          const p = data.players.find(q => String(q.id) === id);
-          return p ? `<span class="tk ev"><span class="ldot">●</span><span class="tknm">${p.name}</span><span class="px num livepx">${l.pts} PTS</span></span>` : "";
-        }).join("");
-      enterEventMode(seed);
+    currGames.hidden = true;
+    if (!currPlay.innerHTML && !playQueue.length){
+      // first look mid-game: lead with the top scorer until the plays start flowing
+      const top = Object.entries(newMap).filter(([, l]) => l.state === "in" && l.pts > 0)
+        .sort((x, y) => y[1].pts - x[1].pts)[0];
+      if (top){
+        const p = data.players.find(q => String(q.id) === top[0]);
+        if (p) currPlay.innerHTML = playHtml(p.name, `${top[1].pts} PTS`);
+      }
     }
     pushEvents(evHtml);
-  } else endEventMode();
+  } else {
+    currGames.hidden = false;
+    currPlay.innerHTML = "";
+    playQueue.length = 0;
+  }
   const mkt = document.getElementById("mkt");
   const board = ` · PRICED OFF ${data.seasonLabel}`;
   if (nIn){
@@ -674,10 +635,9 @@ function runDemo(){
   const l = {state:"in", detail:"Q1 12:00", opp:"OKC", min:0, pts:0, reb:0, ast:0, stl:0, blk:0, tpm:0};
   liveMap = {[p.id]: l};
   emitEvents(p.id, p.name, l);   // baseline for the play feed
-  enterEventMode("");
   const curr = document.getElementById("curr");
   curr.hidden = false;
-  currGames.innerHTML = '<div><span class="gm-sc">SA @ OKC</span> · <span class="gm-live">SIMULATED</span></div>';
+  currGames.hidden = true;
   document.getElementById("mkt").classList.add("live");
   mktTxt.textContent = `MARKET OPEN · DEMO — SIMULATED ${p.sym} GAME`;
   foot.textContent = "Demo mode: this game is simulated to show how live updates look. Remove #demo from the address for real data.";
@@ -692,7 +652,6 @@ function runDemo(){
       mktTxt.textContent = "MARKET CLOSED · DEMO OVER — RELOAD WITHOUT #demo FOR REAL DATA";
       setPotn({name: p.name, gs: demoGs(), pts: l.pts, reb: l.reb, ast: l.ast}, true);
       potnWinnerId = p.id;
-      endEventMode();
       render();
       return;
     }
