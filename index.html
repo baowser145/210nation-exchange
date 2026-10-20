@@ -473,15 +473,16 @@ async function pollLive(){
   const nIn = events.filter(e => e.status.type.state === "in").length;
   const nPre = events.filter(e => e.status.type.state === "pre").length;
   const mkt = document.getElementById("mkt");
+  const board = ` · PRICED OFF ${data.seasonLabel}`;
   if (nIn){
     mkt.classList.add("live");
-    mktTxt.textContent = `MARKET OPEN · ${nIn} LIVE GAME${nIn > 1 ? "S" : ""}`;
+    mktTxt.textContent = `MARKET OPEN · ${nIn} LIVE GAME${nIn > 1 ? "S" : ""}` + board;
   } else if (nPre){
     mkt.classList.remove("live");
-    mktTxt.textContent = `PRE-MARKET · ${events.length} GAME${events.length > 1 ? "S" : ""} TODAY`;
+    mktTxt.textContent = `PRE-MARKET · ${events.length} GAME${events.length > 1 ? "S" : ""} TODAY` + board;
   } else {
     mkt.classList.remove("live");
-    mktTxt.textContent = `MARKET CLOSED · TODAY'S SESSION FINAL`;
+    mktTxt.textContent = `MARKET CLOSED · TODAY'S SESSION FINAL` + board;
   }
   render();
 
