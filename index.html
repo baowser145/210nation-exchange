@@ -191,6 +191,7 @@ let openId = null;
 let liveMap = {};         // playerId -> {state, detail, opp, pts, reb, ast, stl, blk, tpm, min}
 const prevLive = {};      // playerId:statKey -> last shown live value, for change flashes
 let tapeKey = "";         // tape lineup fingerprint: rebuild (and restart) only when it changes
+const autoTried = new Set();  // tonight's scorers we've already tried to pull a season log for
 const tapeDelta = {};     // playerId:statKey -> {val, delta}: the last scoring event shown on the tape
 
 /* ---------- symbols ---------- */
@@ -620,6 +621,7 @@ async function pollLive(){
 
   const boardIds = new Set(data.players.map(p => String(p.id)));
   const newMap = {};
+  const extras = [];   // anyone in tonight's box scores who has scored but isn't on the board yet
   let best = null;
   for (const e of events){
     const st = e.status.type;         // state: pre | in | post
@@ -650,14 +652,28 @@ async function pollLive(){
           const num = k => { const i = keys.indexOf(k); const v = parseFloat(String(sv[i] ?? "").split("-")[0]); return isNaN(v) ? 0 : v; };
           const b = gsLine(keys, sv);
           if (b && (!best || b.gs > best.gs)) best = {...b, id, name: a.athlete.displayName};
-          if (!boardIds.has(id)) continue;
-          newMap[id] = {state: st.state, detail: st.shortDetail || "", opp: opp ? opp.abbreviation : "",
+          const line = {state: st.state, detail: st.shortDetail || "", opp: opp ? opp.abbreviation : "",
             min:num("minutes"), pts:num("points"), reb:num("rebounds"), ast:num("assists"),
             stl:num("steals"), blk:num("blocks"),
             tpm:num("threePointFieldGoalsMade-threePointFieldGoalsAttempted")};
+          if (boardIds.has(id)) newMap[id] = line;
+          else if (line.pts > 0 && !autoTried.has(id))
+            extras.push({id, name: a.athlete.displayName, team: (t.team || {}).abbreviation || "", line});
         }
       }
     } catch (e) { /* one game's box score failing shouldn't kill the rest */ }
+  }
+  // once someone scores tonight, they join the board (with their season log) and go live
+  if (extras.length){
+    await Promise.all(extras.map(async x => {
+      autoTried.add(x.id);
+      try {
+        const p = await loadPlayer(x.id, x.name, x.team, data.season);
+        if (!data.players.some(q => String(q.id) === String(x.id))) data.players.push(p);
+        newMap[x.id] = x.line;
+      } catch (e) { /* no log; they'll retry never, board players unaffected */ }
+    }));
+    makeSymbols(data.players);
   }
   liveMap = newMap;
   if (best){
