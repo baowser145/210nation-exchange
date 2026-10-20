@@ -494,6 +494,7 @@ async function tryLive(){
       if (players.length < 8) continue;
       const label = season === 2027 ? "2026-27" : "2025-26";
       data = {seasonLabel: label, season, live:true, players};
+      autoTried.clear();   // the fresh board dropped any auto-added scorers; let the next poll re-add them
       makeSymbols(data.players);
       morePage = 5;                       // pages of 25; first 100 are loaded
       moreBtn.hidden = false;
