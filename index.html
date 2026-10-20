@@ -40,6 +40,8 @@ a{color:var(--amber)}
 .tk{display:inline-flex;gap:7px;margin-right:28px;font-size:12px}
 .tk .sym{color:var(--amber);font-weight:600}
 .tk .px{color:var(--fg)}
+.tk .tknm{color:var(--fg);font-weight:600}
+.tk .tkdelta{font-weight:600}
 
 /* header */
 header{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 18px;margin-block:22px 4px}
@@ -170,6 +172,7 @@ let openId = null;
 let liveMap = {};         // playerId -> {state, detail, opp, pts, reb, ast, stl, blk, tpm, min}
 const prevLive = {};      // playerId:statKey -> last shown live value, for change flashes
 let tapeKey = "";         // tape lineup fingerprint: rebuild (and restart) only when it changes
+const tapeDelta = {};     // playerId:statKey -> {val, delta}: the last scoring event shown on the tape
 
 /* ---------- symbols ---------- */
 const SUFFIX = /\s+(jr\.?|sr\.?|ii|iii|iv|v)$/i;
@@ -256,11 +259,23 @@ function render(){
   const statLabel = STATS.find(s => s.key === statKey).label;
   const inGame = players.filter(({p}) => liveMap[p.id]?.state === "in");
   const key = statKey + "|" + sortKey + "|" + data.players.length + "|" + players.map(x => x.p.sym).join(",") + "|" + inGame.map(x => x.p.sym).join(",");
+  // each live entry reads like a wire event: name, what they just did, running total
+  const liveEvent = (id) => {
+    const cur = liveVal(liveMap[id]);
+    const k = id + ":" + statKey;
+    const td = tapeDelta[k];
+    if (!td) tapeDelta[k] = {val: cur, delta: 0};
+    else if (cur !== td.val){ td.delta = cur - td.val; td.val = cur; }
+    const d = tapeDelta[k].delta;
+    const n = Math.abs(d);
+    return {cur, d, dTxt: d ? `${d > 0 ? "+" : "−"}${n % 1 ? n.toFixed(1) : n} ${statLabel}` : ""};
+  };
   if (key !== tapeKey){
     tapeKey = key;
     const liveTk = inGame.map(({p}) => {
       const l = liveMap[p.id];
-      return `<span class="tk" data-live="${p.id}"><span class="ldot">●</span><span class="sym">${p.sym}</span><span class="px num livepx">${f1(liveVal(l))} ${statLabel}</span><span class="num last tkd">${l.detail}</span></span>`;
+      const ev = liveEvent(p.id);
+      return `<span class="tk" data-live="${p.id}"><span class="ldot">●</span><span class="tknm">${p.name}</span><span class="num tkdelta ${ev.d < 0 ? "down" : "up"}">${ev.dTxt}</span><span class="px num livepx">${f1(ev.cur)}</span><span class="num last tkd">${l.detail}</span></span>`;
     }).join("");
     const tk = players.map(({p,m}) =>
       `<span class="tk"><span class="sym">${p.sym}</span><span class="px num">${f1(m.l10)}</span><span class="num ${cls(m.chg)}">${arrow(m.chg)}${sgn(m.pct)}%</span></span>`
@@ -269,10 +284,18 @@ function render(){
     tapeTrack.style.animationDuration = Math.max(80, players.length * 3.2) + "s";
   } else {
     for (const el of tapeTrack.querySelectorAll("[data-live]")){
-      const l = liveMap[el.dataset.live];
-      if (!l) continue;
-      el.querySelector(".livepx").textContent = `${f1(liveVal(l))} ${statLabel}`;
-      el.querySelector(".tkd").textContent = l.detail;
+      const id = el.dataset.live;
+      if (!liveMap[id]) continue;
+      const ev = liveEvent(id);
+      const de = el.querySelector(".tkdelta"), px = el.querySelector(".livepx");
+      de.textContent = ev.dTxt;
+      de.classList.toggle("down", ev.d < 0);
+      de.classList.toggle("up", ev.d >= 0);
+      if (px.textContent !== f1(ev.cur)){
+        px.textContent = f1(ev.cur);
+        px.classList.remove("flash"); void px.offsetWidth; px.classList.add("flash");
+      }
+      el.querySelector(".tkd").textContent = liveMap[id].detail;
     }
   }
 
