@@ -357,6 +357,9 @@ function render(){
       ${p.id === openId ? detailHTML(p, m) : ""}
     </button>`;};
   const act = players.filter(x => liveMap[x.p.id]);
+  // today's section is always a live scoreboard: in-game numbers first, pre-tip players last
+  const lvOf = x => { const l = liveMap[x.p.id]; return l.state !== "pre" ? liveVal(l) : -1; };
+  act.sort((a,b) => (lvOf(b) - lvOf(a)) || (b.m.pct - a.m.pct));
   const sec = t => `<div class="sechd">${t}</div>`;
   if (act.length){
     const rest = players.filter(x => !liveMap[x.p.id]);
