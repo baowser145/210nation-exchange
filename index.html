@@ -113,10 +113,20 @@ footer{color:var(--dim);font-size:11px;margin-top:22px;max-width:70ch}
 .err{border:1px solid var(--down);color:var(--down);padding:12px 14px;margin-block:14px;display:none}
 
 @media (max-width:640px){
-  .row,.hd{grid-template-columns:minmax(100px,1.4fr) 1fr 58px 70px;gap:8px;padding:9px 10px}
+  h1{font-size:30px}
+  .tk{font-size:11px;margin-right:22px}
+  .idx{padding:8px 11px}
+  .idx .val{font-size:21px}
+  .hd{display:none}
   .rk,.c-last,.c-avg{display:none}
-  h1{font-size:32px}
-  .detail{margin:9px -10px -9px}
+  .row{grid-template-areas:"who who who" "spark px chg";grid-template-columns:1fr 60px 86px;gap:6px 10px;padding:11px 10px}
+  .row .who{grid-area:who}
+  .row .spark{grid-area:spark}
+  .row .c-px{grid-area:px}
+  .row .c-chg{grid-area:chg}
+  .who .nm{font-size:13px}
+  .sechd{padding:7px 10px}
+  .detail{margin:9px -10px -11px}
 }
 </style>
 
@@ -146,7 +156,7 @@ footer{color:var(--dim);font-size:11px;margin-top:22px;max-width:70ch}
 <div class="err" id="err"></div>
 
 <div class="board" id="board">
-  <div class="hd"><span class="rk">#</span><span>Player</span><span>Last 15</span><span class="cell c-last">Last</span><span class="cell c-avg">Season</span><span class="cell">Price L10</span><span class="cell">Δ%</span></div>
+  <div class="hd"><span class="rk">#</span><span>Player</span><span>Last 15</span><span class="cell c-last">Last</span><span class="cell c-avg">Season</span><span class="cell c-px">Price L10</span><span class="cell c-chg">Δ%</span></div>
   <div id="rows"></div>
 </div>
 <button class="more" id="moreBtn" hidden>Load 25 more</button>
@@ -257,8 +267,8 @@ function render(){
   // Rebuild only when the lineup changes; a rebuild restarts the scroll, so live
   // values are patched into the existing spans instead.
   const statLabel = STATS.find(s => s.key === statKey).label;
-  const inGame = players.filter(({p}) => liveMap[p.id]?.state === "in");
-  const key = statKey + "|" + sortKey + "|" + data.players.length + "|" + players.map(x => x.p.sym).join(",") + "|" + inGame.map(x => x.p.sym).join(",");
+  const liveList = players.filter(({p}) => liveMap[p.id]);
+  const key = statKey + "|" + sortKey + "|" + data.players.length + "|" + players.map(x => x.p.sym).join(",") + "|" + liveList.map(x => x.p.sym + ":" + liveMap[x.p.id].state).join(",");
   // each live entry reads like a wire event: name, what they just did, running total
   const liveEvent = (id) => {
     const cur = liveVal(liveMap[id]);
@@ -272,10 +282,13 @@ function render(){
   };
   if (key !== tapeKey){
     tapeKey = key;
-    const liveTk = inGame.map(({p}) => {
+    const liveTk = liveList.map(({p}) => {
       const l = liveMap[p.id];
+      if (l.state === "pre")
+        return `<span class="tk" data-live="${p.id}"><span class="ldot">●</span><span class="tknm">${p.name}</span><span class="num last tkd">TONIGHT ${l.detail} vs ${l.opp}</span></span>`;
       const ev = liveEvent(p.id);
-      return `<span class="tk" data-live="${p.id}"><span class="ldot">●</span><span class="tknm">${p.name}</span><span class="num tkdelta ${ev.d < 0 ? "down" : "up"}">${ev.dTxt}</span><span class="px num livepx">${f1(ev.cur)}</span><span class="num last tkd">${l.detail}</span></span>`;
+      const when = l.state === "post" ? `FINAL vs ${l.opp}` : l.detail;
+      return `<span class="tk" data-live="${p.id}"><span class="ldot">●</span><span class="tknm">${p.name}</span><span class="num tkdelta ${ev.d < 0 ? "down" : "up"}">${ev.dTxt}</span><span class="px num livepx">${f1(ev.cur)} ${statLabel}</span><span class="num last tkd">${when}</span></span>`;
     }).join("");
     const tk = players.map(({p,m}) =>
       `<span class="tk"><span class="sym">${p.sym}</span><span class="px num">${f1(m.l10)}</span><span class="num ${cls(m.chg)}">${arrow(m.chg)}${sgn(m.pct)}%</span></span>`
@@ -285,17 +298,22 @@ function render(){
   } else {
     for (const el of tapeTrack.querySelectorAll("[data-live]")){
       const id = el.dataset.live;
-      if (!liveMap[id]) continue;
-      const ev = liveEvent(id);
+      const l = liveMap[id];
+      if (!l) continue;
       const de = el.querySelector(".tkdelta"), px = el.querySelector(".livepx");
-      de.textContent = ev.dTxt;
-      de.classList.toggle("down", ev.d < 0);
-      de.classList.toggle("up", ev.d >= 0);
-      if (px.textContent !== f1(ev.cur)){
-        px.textContent = f1(ev.cur);
-        px.classList.remove("flash"); void px.offsetWidth; px.classList.add("flash");
+      if (de && px){
+        const ev = liveEvent(id);
+        de.textContent = ev.dTxt;
+        de.classList.toggle("down", ev.d < 0);
+        de.classList.toggle("up", ev.d >= 0);
+        const txt = `${f1(ev.cur)} ${statLabel}`;
+        if (px.textContent !== txt){
+          px.textContent = txt;
+          px.classList.remove("flash"); void px.offsetWidth; px.classList.add("flash");
+        }
       }
-      el.querySelector(".tkd").textContent = liveMap[id].detail;
+      el.querySelector(".tkd").textContent = l.state === "pre" ? `TONIGHT ${l.detail} vs ${l.opp}`
+        : l.state === "post" ? `FINAL vs ${l.opp}` : l.detail;
     }
   }
 
@@ -323,8 +341,8 @@ function render(){
       <span class="spark">${sparkSVG(m.v, cls(m.chg))}</span>
       <span class="cell num last c-last">${lastCell}</span>
       <span class="cell num last c-avg">${f1(m.season)}</span>
-      <span class="cell num px">${f1(m.l10)}</span>
-      <span class="cell num ${cls(m.chg)}">${arrow(m.chg)} ${sgn(m.pct)}%</span>
+      <span class="cell num px c-px">${f1(m.l10)}</span>
+      <span class="cell num c-chg ${cls(m.chg)}">${arrow(m.chg)} ${sgn(m.pct)}%</span>
       ${p.id === openId ? detailHTML(p, m) : ""}
     </button>`;};
   const act = players.filter(x => liveMap[x.p.id]);
