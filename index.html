@@ -57,6 +57,7 @@ h1 .x{color:var(--amber)}
 .idx{flex:1 1 150px;background:var(--panel2);border:1px solid var(--line);padding:10px 14px;min-width:0}
 .idx .lbl{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
 .idx .val{font-family:var(--disp);font-size:26px;font-weight:600;line-height:1.15}
+#gainer,#loser{font-size:19px;line-height:1.3}
 .idx .chg{font-size:11px}
 
 /* controls */
@@ -260,8 +261,8 @@ function render(){
   idxChg.className = "chg num " + cls(compChg);
   const byPct = [...players].sort((a,b)=>b.m.pct-a.m.pct);
   const g = byPct[0], l = byPct[byPct.length-1];
-  gainer.textContent = g.p.sym; gainerChg.textContent = `${arrow(1)} ${sgn(g.m.pct)}%`; gainerChg.className = "chg num up";
-  loser.textContent = l.p.sym; loserChg.textContent = `${arrow(-1)} ${sgn(l.m.pct)}%`; loserChg.className = "chg num down";
+  gainer.textContent = g.p.name; gainerChg.textContent = `${arrow(1)} ${sgn(g.m.pct)}%`; gainerChg.className = "chg num up";
+  loser.textContent = l.p.name; loserChg.textContent = `${arrow(-1)} ${sgn(l.m.pct)}%`; loserChg.className = "chg num down";
 
   // tape (twice for the loop) — in-game players lead it with their live numbers.
   // Rebuild only when the lineup changes; a rebuild restarts the scroll, so live
@@ -291,7 +292,7 @@ function render(){
       return `<span class="tk" data-live="${p.id}"><span class="ldot">●</span><span class="tknm">${p.name}</span><span class="num tkdelta ${ev.d < 0 ? "down" : "up"}">${ev.dTxt}</span><span class="px num livepx">${f1(ev.cur)} ${statLabel}</span><span class="num last tkd">${when}</span></span>`;
     }).join("");
     const tk = players.map(({p,m}) =>
-      `<span class="tk"><span class="sym">${p.sym}</span><span class="px num">${f1(m.l10)}</span><span class="num ${cls(m.chg)}">${arrow(m.chg)}${sgn(m.pct)}%</span></span>`
+      `<span class="tk"><span class="tknm">${p.name}</span><span class="px num">${f1(m.l10)}</span><span class="num ${cls(m.chg)}">${arrow(m.chg)}${sgn(m.pct)}%</span></span>`
     ).join("");
     tapeTrack.innerHTML = liveTk + tk + liveTk + tk;
     tapeTrack.style.animationDuration = Math.max(80, players.length * 3.2) + "s";
