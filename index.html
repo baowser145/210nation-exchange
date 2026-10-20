@@ -169,6 +169,7 @@ let data = null;          // {seasonLabel, live, players:[{id,name,team,games:[.
 let openId = null;
 let liveMap = {};         // playerId -> {state, detail, opp, pts, reb, ast, stl, blk, tpm, min}
 const prevLive = {};      // playerId:statKey -> last shown live value, for change flashes
+let tapeKey = "";         // tape lineup fingerprint: rebuild (and restart) only when it changes
 
 /* ---------- symbols ---------- */
 const SUFFIX = /\s+(jr\.?|sr\.?|ii|iii|iv|v)$/i;
@@ -249,17 +250,31 @@ function render(){
   gainer.textContent = g.p.sym; gainerChg.textContent = `${arrow(1)} ${sgn(g.m.pct)}%`; gainerChg.className = "chg num up";
   loser.textContent = l.p.sym; loserChg.textContent = `${arrow(-1)} ${sgn(l.m.pct)}%`; loserChg.className = "chg num down";
 
-  // tape (twice for the loop) — in-game players lead it with their live numbers
+  // tape (twice for the loop) — in-game players lead it with their live numbers.
+  // Rebuild only when the lineup changes; a rebuild restarts the scroll, so live
+  // values are patched into the existing spans instead.
   const statLabel = STATS.find(s => s.key === statKey).label;
-  const liveTk = players.filter(({p}) => liveMap[p.id]?.state === "in").map(({p}) => {
-    const l = liveMap[p.id];
-    return `<span class="tk"><span class="ldot">●</span><span class="sym">${p.sym}</span><span class="px num livepx">${f1(liveVal(l))} ${statLabel}</span><span class="num last">${l.detail}</span></span>`;
-  }).join("");
-  const tk = players.map(({p,m}) =>
-    `<span class="tk"><span class="sym">${p.sym}</span><span class="px num">${f1(m.l10)}</span><span class="num ${cls(m.chg)}">${arrow(m.chg)}${sgn(m.pct)}%</span></span>`
-  ).join("");
-  tapeTrack.innerHTML = liveTk + tk + liveTk + tk;
-  tapeTrack.style.animationDuration = Math.max(80, players.length * 3.2) + "s";
+  const inGame = players.filter(({p}) => liveMap[p.id]?.state === "in");
+  const key = statKey + "|" + sortKey + "|" + data.players.length + "|" + players.map(x => x.p.sym).join(",") + "|" + inGame.map(x => x.p.sym).join(",");
+  if (key !== tapeKey){
+    tapeKey = key;
+    const liveTk = inGame.map(({p}) => {
+      const l = liveMap[p.id];
+      return `<span class="tk" data-live="${p.id}"><span class="ldot">●</span><span class="sym">${p.sym}</span><span class="px num livepx">${f1(liveVal(l))} ${statLabel}</span><span class="num last tkd">${l.detail}</span></span>`;
+    }).join("");
+    const tk = players.map(({p,m}) =>
+      `<span class="tk"><span class="sym">${p.sym}</span><span class="px num">${f1(m.l10)}</span><span class="num ${cls(m.chg)}">${arrow(m.chg)}${sgn(m.pct)}%</span></span>`
+    ).join("");
+    tapeTrack.innerHTML = liveTk + tk + liveTk + tk;
+    tapeTrack.style.animationDuration = Math.max(80, players.length * 3.2) + "s";
+  } else {
+    for (const el of tapeTrack.querySelectorAll("[data-live]")){
+      const l = liveMap[el.dataset.live];
+      if (!l) continue;
+      el.querySelector(".livepx").textContent = `${f1(liveVal(l))} ${statLabel}`;
+      el.querySelector(".tkd").textContent = l.detail;
+    }
+  }
 
   // rows — on game days, today's slate gets its own section up top
   const rowHTML = ({p,m}, i) => {
@@ -529,8 +544,42 @@ async function pollLive(){
   if (nIn || nPre) setTimeout(pollLive, nIn ? 45000 : 5 * 60000);
 }
 
+/* ---------- demo: a simulated Wembanyama game (open the page with #demo) ---------- */
+function runDemo(){
+  const p = data.players.find(x => /Wembanyama/.test(x.name)) || data.players[0];
+  const l = {state:"in", detail:"Q1 12:00", opp:"OKC", min:0, pts:0, reb:0, ast:0, stl:0, blk:0, tpm:0};
+  liveMap = {[p.id]: l};
+  document.getElementById("mkt").classList.add("live");
+  mktTxt.textContent = `MARKET OPEN · DEMO — SIMULATED ${p.sym} GAME`;
+  foot.textContent = "Demo mode: this game is simulated to show how live updates look. Remove #demo from the address for real data.";
+  let q = 1, secLeft = 720;
+  const timer = setInterval(() => {
+    secLeft -= 90 + Math.floor(Math.random() * 40);
+    if (secLeft <= 0){ q++; secLeft = 720; }
+    if (q > 4){
+      clearInterval(timer);
+      l.state = "post"; l.detail = "Final";
+      mktTxt.textContent = "MARKET CLOSED · DEMO OVER — RELOAD WITHOUT #demo FOR REAL DATA";
+      render();
+      return;
+    }
+    const r = Math.random();
+    if (r < .30) l.pts += 2;
+    else if (r < .42){ l.pts += 3; l.tpm += 1; }
+    else if (r < .52) l.pts += 1;
+    else if (r < .76) l.reb += 1;
+    else if (r < .90) l.ast += 1;
+    else l.blk += 1;
+    l.min = Math.min(38, l.min + 1.5);
+    l.detail = `Q${q} ${Math.floor(secLeft / 60)}:${String(secLeft % 60).padStart(2, "0")}`;
+    render();
+  }, 2200);
+  render();
+}
+
 useSnapshot();
-tryLive().finally(pollLive);
+if (/(^|[?&#])demo/.test(location.search + location.hash)) runDemo();
+else tryLive().finally(pollLive);
 </script>
 
 </body>
