@@ -152,6 +152,7 @@ footer{color:var(--dim);font-size:11px;margin-top:22px;max-width:70ch}
   <div class="sorts" id="sorts" role="group" aria-label="Sort">
     <button data-sort="chg" aria-pressed="true">Δ%</button>
     <button data-sort="px" aria-pressed="false">Price</button>
+    <button data-sort="live" aria-pressed="false">Tonight</button>
   </div>
 </div>
 
@@ -250,7 +251,15 @@ function sparkSVG(v, chgClass){
 /* ---------- render ---------- */
 function render(){
   const players = data.players.map(p => ({p, m: metrics(p)}));
-  players.sort((a,b) => sortKey === "px" ? b.m.l10 - a.m.l10 : b.m.pct - a.m.pct);
+  players.sort((a,b) => {
+    if (sortKey === "px") return b.m.l10 - a.m.l10;
+    if (sortKey === "live"){
+      const lv = x => { const l = liveMap[x.p.id]; return l && l.state !== "pre" ? liveVal(l) : -1; };
+      const d = lv(b) - lv(a);
+      if (d) return d;
+    }
+    return b.m.pct - a.m.pct;
+  });
 
   // movers
   const byPct = [...players].sort((a,b)=>b.m.pct-a.m.pct);
