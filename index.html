@@ -503,9 +503,9 @@ function gsLine(keys, sv){
 
 function setPotn(b, final){
   potn.hidden = false;
-  potnLbl.textContent = final ? "Player of the Night" : "Player of the Night · Live";
+  potnLbl.textContent = "Player of the Night";
   potnName.textContent = b.name;
-  potnLine.textContent = `Game score ${f1(b.gs)} · ${b.pts} PTS · ${b.reb} REB · ${b.ast} AST`;
+  potnLine.innerHTML = `Impact ${f1(b.gs)}<br>${b.pts} PTS, ${b.reb} REB, ${b.ast} AST`;
 }
 
 async function pollLive(){
