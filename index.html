@@ -293,7 +293,11 @@ function render(){
   };
   if (key !== tapeKey){
     tapeKey = key;
-    const liveTk = liveList.map(({p}) => {
+    // once a game is underway, the tape features only players on the floor;
+    // TONIGHT previews run pre-tip, FINAL lines run after
+    const anyIn = liveList.some(x => liveMap[x.p.id].state === "in");
+    const feat = anyIn ? liveList.filter(x => liveMap[x.p.id].state === "in") : liveList;
+    const liveTk = feat.map(({p}) => {
       const l = liveMap[p.id];
       if (l.state === "pre")
         return `<span class="tk" data-live="${p.id}"><span class="ldot">●</span><span class="tknm">${p.name}${potnBadge(p.id)}</span><span class="num last tkd">TONIGHT ${l.detail} vs ${l.opp}</span></span>`;
