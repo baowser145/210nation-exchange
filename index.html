@@ -138,10 +138,7 @@ footer{color:var(--dim);font-size:11px;margin-top:22px;max-width:70ch}
   <h1>HARDWOOD E<span class="x">X</span>CHANGE</h1>
   <span class="mkt" id="mkt"><span class="dot"></span><span id="mktTxt">LOADING</span></span>
 </header>
-<p class="sub">Every rotation player averaging 15+ minutes and 8+ points, traded like tickers. Price is a player's last-10-game average for the chosen stat; the change is that form against their season average — green is a hot streak, red is a cold one. On game days, today's slate gets its own section up top and in-game numbers tick in as they play.</p>
-
 <div class="strip">
-  <div class="idx"><span class="lbl">HWX Composite</span><div class="val num" id="idxVal">—</div><div class="chg num" id="idxChg"></div></div>
   <div class="idx"><span class="lbl">Top Gainer</span><div class="val" id="gainer">—</div><div class="chg num" id="gainerChg"></div></div>
   <div class="idx"><span class="lbl">Top Decliner</span><div class="val" id="loser">—</div><div class="chg num" id="loserChg"></div></div>
 </div>
@@ -251,14 +248,7 @@ function render(){
   const players = data.players.map(p => ({p, m: metrics(p)}));
   players.sort((a,b) => sortKey === "px" ? b.m.l10 - a.m.l10 : b.m.pct - a.m.pct);
 
-  // composite + movers
-  const comp = avg(players.map(x => x.m.l10));
-  const compSeason = avg(players.map(x => x.m.season));
-  const compChg = comp - compSeason;
-  const compPct = compSeason ? compChg/compSeason*100 : 0;
-  idxVal.textContent = f1(comp*10);
-  idxChg.textContent = `${arrow(compChg)} ${sgn(compChg*10)} (${sgn(compPct)}%)`;
-  idxChg.className = "chg num " + cls(compChg);
+  // movers
   const byPct = [...players].sort((a,b)=>b.m.pct-a.m.pct);
   const g = byPct[0], l = byPct[byPct.length-1];
   gainer.textContent = g.p.name; gainerChg.textContent = `${arrow(1)} ${sgn(g.m.pct)}%`; gainerChg.className = "chg num up";
@@ -338,7 +328,7 @@ function render(){
     return `
     <button class="row" data-id="${p.id}" aria-expanded="${p.id===openId}">
       <span class="rk num">${i+1}</span>
-      <span class="who"><span class="nm"><span class="sym">${p.sym}</span> ${p.name}</span><span class="tm">${p.team} · ${p.games.length} GP${liveLine}</span></span>
+      <span class="who"><span class="nm">${p.name}</span><span class="tm">${p.team} · ${p.games.length} GP${liveLine}</span></span>
       <span class="spark">${sparkSVG(m.v, cls(m.chg))}</span>
       <span class="cell num last c-last">${lastCell}</span>
       <span class="cell num last c-avg">${f1(m.season)}</span>
@@ -446,7 +436,7 @@ function useSnapshot(){
   data = {seasonLabel: SNAPSHOT.season, season: 2026, live:false, players: SNAPSHOT.players.filter(qualifies)};
   makeSymbols(data.players);
   mktTxt.textContent = `OFFSEASON · ${SNAPSHOT.season} FINAL BOARD`;
-  foot.textContent = `Unofficial fan project. Stats: ESPN public API, ${SNAPSHOT.season} regular season, snapshot ${SNAPSHOT.asOf}. When hosted on a regular web host this page refreshes itself from the live feed.`;
+  foot.textContent = `Price is a player's last-10-game average for the chosen stat; Δ% is that form against their season average. Board floor: 15+ minutes and 8+ points a game. Unofficial fan project. Stats: ESPN public API, ${SNAPSHOT.season} regular season, snapshot ${SNAPSHOT.asOf}.`;
   render();
 }
 
@@ -495,7 +485,7 @@ async function tryLive(){
       moreBtn.hidden = false;
       document.getElementById("mkt").classList.add("live");
       mktTxt.textContent = `LIVE FEED · ${label} SEASON`;
-      foot.textContent = `Unofficial fan project. Stats: ESPN public API, ${label} regular season, fetched live on page load. Board floor: 15+ minutes and 8+ points a game.`;
+      foot.textContent = `Price is a player's last-10-game average for the chosen stat; Δ% is that form against their season average. Board floor: 15+ minutes and 8+ points a game. Unofficial fan project. Stats: ESPN public API, ${label} regular season, fetched live on page load.`;
       render();
       return;
     } catch (e) { /* blocked or down — keep the snapshot */ }
