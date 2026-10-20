@@ -57,7 +57,9 @@ h1 .x{color:var(--amber)}
 .idx{flex:1 1 150px;background:var(--panel2);border:1px solid var(--line);padding:10px 14px;min-width:0}
 .idx .lbl{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
 .idx .val{font-family:var(--disp);font-size:26px;font-weight:600;line-height:1.15}
-#gainer,#loser{font-size:19px;line-height:1.3}
+#gainer,#loser,#potnName{font-size:19px;line-height:1.3}
+#potn{border-color:var(--amber)}
+#potnLine{color:var(--amber)}
 .idx .chg{font-size:11px}
 
 /* controls */
@@ -139,6 +141,7 @@ footer{color:var(--dim);font-size:11px;margin-top:22px;max-width:70ch}
   <span class="mkt" id="mkt"><span class="dot"></span><span id="mktTxt">LOADING</span></span>
 </header>
 <div class="strip">
+  <div class="idx" id="potn" hidden><span class="lbl" id="potnLbl">Player of the Night</span><div class="val" id="potnName">—</div><div class="chg num" id="potnLine"></div></div>
   <div class="idx"><span class="lbl">Top Gainer</span><div class="val" id="gainer">—</div><div class="chg num" id="gainerChg"></div></div>
   <div class="idx"><span class="lbl">Top Decliner</span><div class="val" id="loser">—</div><div class="chg num" id="loserChg"></div></div>
 </div>
@@ -511,6 +514,14 @@ moreBtn.addEventListener("click", loadMore);
 /* ---------- game day: scoreboard + live box scores ---------- */
 const SB = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba";
 
+// Player of the Night: best Hollinger game score across everyone in today's box scores
+function setPotn(b, final){
+  potn.hidden = false;
+  potnLbl.textContent = final ? "Player of the Night" : "Player of the Night · Live";
+  potnName.textContent = b.name;
+  potnLine.textContent = `Game score ${f1(b.gs)} · ${b.pts} PTS · ${b.reb} REB · ${b.ast} AST`;
+}
+
 async function pollLive(){
   let events;
   try { events = (await j(`${SB}/scoreboard`)).events || []; }
@@ -519,6 +530,7 @@ async function pollLive(){
 
   const boardIds = new Set(data.players.map(p => String(p.id)));
   const newMap = {};
+  let best = null;
   for (const e of events){
     const st = e.status.type;         // state: pre | in | post
     const comp = (e.competitions || [])[0] || {};
@@ -544,9 +556,20 @@ async function pollLive(){
         const opp = teams.find(x => x.id !== t.team.id);
         for (const a of stats.athletes || []){
           const id = String(a.athlete.id);
-          if (!boardIds.has(id)) continue;
           const sv = a.stats || [];
           const num = k => { const i = keys.indexOf(k); const v = parseFloat(String(sv[i] ?? "").split("-")[0]); return isNaN(v) ? 0 : v; };
+          if (sv.length){
+            const pair = k => { const i = keys.indexOf(k); const parts = String(sv[i] ?? "").split("-"); return [parseFloat(parts[0]) || 0, parseFloat(parts[1]) || 0]; };
+            const [fgm, fga] = pair("fieldGoalsMade-fieldGoalsAttempted");
+            const [ftm, fta] = pair("freeThrowsMade-freeThrowsAttempted");
+            const gs = num("points") + 0.4*fgm - 0.7*fga - 0.4*(fta - ftm)
+              + 0.7*num("offensiveRebounds") + 0.3*num("defensiveRebounds")
+              + num("steals") + 0.7*num("assists") + 0.7*num("blocks")
+              - 0.4*num("fouls") - num("turnovers");
+            if (!best || gs > best.gs)
+              best = {name: a.athlete.displayName, gs, pts: num("points"), reb: num("rebounds"), ast: num("assists")};
+          }
+          if (!boardIds.has(id)) continue;
           newMap[id] = {state: st.state, detail: st.shortDetail || "", opp: opp ? opp.abbreviation : "",
             min:num("minutes"), pts:num("points"), reb:num("rebounds"), ast:num("assists"),
             stl:num("steals"), blk:num("blocks"),
@@ -556,6 +579,7 @@ async function pollLive(){
     } catch (e) { /* one game's box score failing shouldn't kill the rest */ }
   }
   liveMap = newMap;
+  if (best) setPotn(best, events.every(e => e.status.type.state === "post"));
 
   const nIn = events.filter(e => e.status.type.state === "in").length;
   const nPre = events.filter(e => e.status.type.state === "pre").length;
@@ -588,10 +612,12 @@ function runDemo(){
   const timer = setInterval(() => {
     secLeft -= 90 + Math.floor(Math.random() * 40);
     if (secLeft <= 0){ q++; secLeft = 720; }
+    const demoGs = () => l.pts + 0.7*l.ast + 0.3*l.reb + l.stl + 0.7*l.blk;
     if (q > 4){
       clearInterval(timer);
       l.state = "post"; l.detail = "Final";
       mktTxt.textContent = "MARKET CLOSED · DEMO OVER — RELOAD WITHOUT #demo FOR REAL DATA";
+      setPotn({name: p.name, gs: demoGs(), pts: l.pts, reb: l.reb, ast: l.ast}, true);
       render();
       return;
     }
@@ -604,6 +630,7 @@ function runDemo(){
     else l.blk += 1;
     l.min = Math.min(38, l.min + 1.5);
     l.detail = `Q${q} ${Math.floor(secLeft / 60)}:${String(secLeft % 60).padStart(2, "0")}`;
+    setPotn({name: p.name, gs: demoGs(), pts: l.pts, reb: l.reb, ast: l.ast}, false);
     render();
   }, 2200);
   render();
