@@ -95,6 +95,15 @@ button:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
 .legend{display:flex;gap:18px;margin-top:6px;font-size:10px;color:var(--dim);letter-spacing:.08em;text-transform:uppercase}
 .legend i{display:inline-block;width:10px;height:3px;vertical-align:middle;margin-right:5px}
 
+/* live game day */
+.livepx{color:var(--amber)}
+.ldot{color:var(--up);animation:blink 1.6s ease-in-out infinite}
+@keyframes blink{50%{opacity:.25}}
+.flash{animation:flash .9s ease-out}
+@keyframes flash{from{background:rgba(243,182,63,.35)}to{background:transparent}}
+.mkt.live #mktTxt{color:var(--up)}
+@media (prefers-reduced-motion:reduce){.ldot,.flash{animation:none}}
+
 footer{color:var(--dim);font-size:11px;margin-top:22px;max-width:70ch}
 .err{border:1px solid var(--down);color:var(--down);padding:12px 14px;margin-block:14px;display:none}
 
@@ -113,7 +122,7 @@ footer{color:var(--dim);font-size:11px;margin-top:22px;max-width:70ch}
   <h1>NBA PLAYER E<span class="x">X</span>CHANGE</h1>
   <span class="mkt" id="mkt"><span class="dot"></span><span id="mktTxt">LOADING</span></span>
 </header>
-<p class="sub">Top 24 scorers traded like tickers. Price is a player's last-10-game average for the chosen stat; the change is that form against their season average — green is a hot streak, red is a cold one.</p>
+<p class="sub">Top 24 scorers traded like tickers. Price is a player's last-10-game average for the chosen stat; the change is that form against their season average — green is a hot streak, red is a cold one. On game days, players in action get a live badge and their in-game numbers tick in as they play.</p>
 
 <div class="strip">
   <div class="idx"><span class="lbl">NPX Composite</span><div class="val num" id="idxVal">—</div><div class="chg num" id="idxChg"></div></div>
@@ -154,6 +163,8 @@ let statKey = "pts";
 let sortKey = "chg";
 let data = null;          // {seasonLabel, live, players:[{id,name,team,games:[...]}]}
 let openId = null;
+let liveMap = {};         // playerId -> {state, detail, opp, pts, reb, ast, stl, blk, tpm, min}
+const prevLive = {};      // playerId:statKey -> last shown live value, for change flashes
 
 /* ---------- symbols ---------- */
 const SUFFIX = /\s+(jr\.?|sr\.?|ii|iii|iv|v)$/i;
@@ -187,6 +198,7 @@ function metrics(p){
   const pct = season > 0 ? chg / season * 100 : 0;
   return {v, season, l10, chg, pct, last: v[v.length-1] ?? 0, hi: Math.max(0,...v), lo: v.length?Math.min(...v):0};
 }
+const liveVal = (l) => statKey === "pra" ? l.pts + l.reb + l.ast : (l[statKey] || 0);
 const f1 = (x) => x.toFixed(1);
 const sgn = (x) => (x >= 0 ? "+" : "−") + Math.abs(x).toFixed(1);
 const cls = (x) => Math.abs(x) < 0.05 ? "flat" : x > 0 ? "up" : "down";
@@ -229,24 +241,45 @@ function render(){
   gainer.textContent = g.p.sym; gainerChg.textContent = `${arrow(1)} ${sgn(g.m.pct)}%`; gainerChg.className = "chg num up";
   loser.textContent = l.p.sym; loserChg.textContent = `${arrow(-1)} ${sgn(l.m.pct)}%`; loserChg.className = "chg num down";
 
-  // tape (twice for the loop)
+  // tape (twice for the loop) — in-game players lead it with their live numbers
+  const statLabel = STATS.find(s => s.key === statKey).label;
+  const liveTk = players.filter(({p}) => liveMap[p.id]?.state === "in").map(({p}) => {
+    const l = liveMap[p.id];
+    return `<span class="tk"><span class="ldot">●</span><span class="sym">${p.sym}</span><span class="px num livepx">${f1(liveVal(l))} ${statLabel}</span><span class="num last">${l.detail}</span></span>`;
+  }).join("");
   const tk = players.map(({p,m}) =>
     `<span class="tk"><span class="sym">${p.sym}</span><span class="px num">${f1(m.l10)}</span><span class="num ${cls(m.chg)}">${arrow(m.chg)}${sgn(m.pct)}%</span></span>`
   ).join("");
-  tapeTrack.innerHTML = tk + tk;
+  tapeTrack.innerHTML = liveTk + tk + liveTk + tk;
 
   // rows
-  rows.innerHTML = players.map(({p,m}, i) => `
+  rows.innerHTML = players.map(({p,m}, i) => {
+    const l = liveMap[p.id];
+    let liveLine = "", lastCell = f1(m.last);
+    if (l){
+      if (l.state === "pre") liveLine = ` · <span class="ldot">●</span> TONIGHT ${l.detail} vs ${l.opp}`;
+      else {
+        const lv = liveVal(l);
+        const key = p.id + ":" + statKey;
+        const flash = prevLive[key] !== undefined && prevLive[key] !== lv ? " flash" : "";
+        prevLive[key] = lv;
+        lastCell = `<span class="livepx${flash}">${f1(lv)}</span>`;
+        liveLine = l.state === "in"
+          ? ` · <span class="ldot">●</span> LIVE ${l.detail} vs ${l.opp}`
+          : ` · FINAL vs ${l.opp}`;
+      }
+    }
+    return `
     <button class="row" data-id="${p.id}" aria-expanded="${p.id===openId}">
       <span class="rk num">${i+1}</span>
-      <span class="who"><span class="nm"><span class="sym">${p.sym}</span> ${p.name}</span><span class="tm">${p.team} · ${p.games.length} GP</span></span>
+      <span class="who"><span class="nm"><span class="sym">${p.sym}</span> ${p.name}</span><span class="tm">${p.team} · ${p.games.length} GP${liveLine}</span></span>
       <span class="spark">${sparkSVG(m.v, cls(m.chg))}</span>
-      <span class="cell num last c-last">${f1(m.last)}</span>
+      <span class="cell num last c-last">${lastCell}</span>
       <span class="cell num last c-avg">${f1(m.season)}</span>
       <span class="cell num px">${f1(m.l10)}</span>
       <span class="cell num ${cls(m.chg)}">${arrow(m.chg)} ${sgn(m.pct)}%</span>
       ${p.id === openId ? detailHTML(p, m) : ""}
-    </button>`).join("");
+    </button>`;}).join("");
 
   if (openId){
     const p = data.players.find(x => x.id === openId);
@@ -256,8 +289,12 @@ function render(){
 
 function detailHTML(p, m){
   const l5 = avg(m.v.slice(-5));
+  const l = liveMap[p.id];
+  const tonight = l && l.state !== "pre"
+    ? `<span><span class="k">Tonight</span><span class="num livepx">${f1(liveVal(l))} ${STATS.find(s=>s.key===statKey).label} · ${l.state === "in" ? l.detail : "FINAL"}</span></span>`
+    : "";
   return `<span class="detail">
-    <span class="dstats">
+    <span class="dstats">${tonight}
       <span><span class="k">Season avg</span><span class="num">${f1(m.season)}</span></span>
       <span><span class="k">Last 5</span><span class="num">${f1(l5)}</span></span>
       <span><span class="k">Last 10</span><span class="num">${f1(m.l10)}</span></span>
@@ -376,7 +413,7 @@ async function tryLive(){
       data = {seasonLabel: label, live:true, players: withGames};
       makeSymbols(data.players);
       document.getElementById("mkt").classList.add("live");
-      mktTxt.textContent = `LIVE · ${label} SEASON`;
+      mktTxt.textContent = `LIVE FEED · ${label} SEASON`;
       foot.textContent = `Unofficial fan project. Stats: ESPN public API, ${label} regular season, fetched live on page load.`;
       render();
       return;
@@ -384,8 +421,75 @@ async function tryLive(){
   }
 }
 
+/* ---------- game day: scoreboard + live box scores ---------- */
+const SB = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba";
+
+async function pollLive(){
+  let events;
+  try { events = (await j(`${SB}/scoreboard`)).events || []; }
+  catch (e) { return; }               // fetch blocked or feed down — no live layer
+  if (!events.length){ liveMap = {}; return; }
+
+  const boardIds = new Set(data.players.map(p => String(p.id)));
+  const newMap = {};
+  for (const e of events){
+    const st = e.status.type;         // state: pre | in | post
+    const comp = (e.competitions || [])[0] || {};
+    const teams = (comp.competitors || []).map(c => c.team);
+    if (st.state === "pre"){
+      // tag board players by team; tip time without the date prefix
+      const when = (st.shortDetail || "").replace(/^\d+\/\d+ - /, "");
+      for (const p of data.players){
+        const mine = teams.find(t => t.abbreviation === p.team);
+        if (!mine || newMap[p.id]) continue;
+        const opp = teams.find(t => t !== mine);
+        newMap[p.id] = {state:"pre", detail: when, opp: opp ? opp.abbreviation : ""};
+      }
+      continue;
+    }
+    // in progress or final today: pull the box score
+    try {
+      const sum = await j(`${SB}/summary?event=${e.id}`);
+      for (const t of (sum.boxscore && sum.boxscore.players) || []){
+        const stats = (t.statistics || [])[0];
+        if (!stats) continue;
+        const keys = stats.keys || [];
+        const opp = teams.find(x => x.id !== t.team.id);
+        for (const a of stats.athletes || []){
+          const id = String(a.athlete.id);
+          if (!boardIds.has(id)) continue;
+          const sv = a.stats || [];
+          const num = k => { const i = keys.indexOf(k); const v = parseFloat(String(sv[i] ?? "").split("-")[0]); return isNaN(v) ? 0 : v; };
+          newMap[id] = {state: st.state, detail: st.shortDetail || "", opp: opp ? opp.abbreviation : "",
+            min:num("minutes"), pts:num("points"), reb:num("rebounds"), ast:num("assists"),
+            stl:num("steals"), blk:num("blocks"),
+            tpm:num("threePointFieldGoalsMade-threePointFieldGoalsAttempted")};
+        }
+      }
+    } catch (e) { /* one game's box score failing shouldn't kill the rest */ }
+  }
+  liveMap = newMap;
+
+  const nIn = events.filter(e => e.status.type.state === "in").length;
+  const nPre = events.filter(e => e.status.type.state === "pre").length;
+  const mkt = document.getElementById("mkt");
+  if (nIn){
+    mkt.classList.add("live");
+    mktTxt.textContent = `MARKET OPEN · ${nIn} LIVE GAME${nIn > 1 ? "S" : ""}`;
+  } else if (nPre){
+    mkt.classList.remove("live");
+    mktTxt.textContent = `PRE-MARKET · ${events.length} GAME${events.length > 1 ? "S" : ""} TODAY`;
+  } else {
+    mkt.classList.remove("live");
+    mktTxt.textContent = `MARKET CLOSED · TODAY'S SESSION FINAL`;
+  }
+  render();
+
+  if (nIn || nPre) setTimeout(pollLive, nIn ? 45000 : 5 * 60000);
+}
+
 useSnapshot();
-tryLive();
+tryLive().finally(pollLive);
 </script>
 
 </body>
