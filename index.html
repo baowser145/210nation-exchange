@@ -66,20 +66,13 @@ h1 .x{color:var(--amber)}
 /* controls */
 .ctrl{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
 .tabs{display:flex;gap:4px;flex-wrap:wrap}
-.tabs button,.sorts button{font:inherit;font-size:12px;background:var(--panel);color:var(--dim);border:1px solid var(--line);padding:6px 13px;cursor:pointer}
+.tabs button{font:inherit;font-size:12px;background:var(--panel);color:var(--dim);border:1px solid var(--line);padding:6px 13px;cursor:pointer}
 .tabs button[aria-pressed="true"]{color:#121212;background:var(--amber);border-color:var(--amber);font-weight:600}
-.sorts{margin-left:auto;display:flex;gap:4px}
-.addp{display:flex;gap:4px}
-.addp input{font:inherit;font-size:12px;background:var(--panel);color:var(--fg);border:1px solid var(--line);padding:6px 10px;width:140px;min-width:0}
-.addp input::placeholder{color:var(--dim)}
-.addp button{font:inherit;font-size:12px;background:var(--panel);color:var(--dim);border:1px solid var(--line);padding:6px 10px;cursor:pointer}
-.addp button:hover{color:var(--amber)}
-.sorts button[aria-pressed="true"]{color:var(--fg);border-color:var(--dim)}
 button:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
 
 /* board */
 .board{border:1px solid var(--line);background:var(--panel)}
-.row,.hd{display:grid;grid-template-columns:30px minmax(130px,1.5fr) 110px 64px 64px 84px 64px;gap:10px;align-items:center;padding:9px 14px}
+.row,.hd{display:grid;grid-template-columns:30px minmax(130px,1.5fr) 110px 64px 84px 64px;gap:10px;align-items:center;padding:9px 14px}
 .hd{font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--dim);border-bottom:1px solid var(--line);position:sticky;top:33px;background:var(--panel);z-index:2}
 .row{border-bottom:1px solid var(--line);cursor:pointer;background:none;border-inline:0;border-top:0;width:100%;text-align:left;font:inherit;color:inherit}
 .row:last-of-type{border-bottom:0}
@@ -127,7 +120,7 @@ footer{color:var(--dim);font-size:11px;margin-top:22px;max-width:70ch}
   .idx{padding:8px 11px}
   .idx .val{font-size:21px}
   .hd{display:none}
-  .rk,.c-avg{display:none}
+  .rk{display:none}
   .row{grid-template-areas:"who who who who" "spark last px chg";grid-template-columns:1fr 44px 54px 78px;gap:6px 9px;padding:11px 10px}
   .row .who{grid-area:who}
   .row .spark{grid-area:spark}
@@ -155,18 +148,12 @@ footer{color:var(--dim);font-size:11px;margin-top:22px;max-width:70ch}
 
 <div class="ctrl">
   <div class="tabs" id="tabs" role="group" aria-label="Stat"></div>
-  <div class="sorts" id="sorts" role="group" aria-label="Sort">
-    <button data-sort="chg" aria-pressed="true">Δ%</button>
-    <button data-sort="px" aria-pressed="false">Price</button>
-    <button data-sort="live" aria-pressed="false">Tonight</button>
-  </div>
-  <form class="addp" id="addp" hidden><input id="addq" type="search" placeholder="Add player…" autocomplete="off"><button type="submit">Add</button></form>
 </div>
 
 <div class="err" id="err"></div>
 
 <div class="board" id="board">
-  <div class="hd"><span class="rk">#</span><span>Player</span><span>Last 15</span><span class="cell c-last">Last</span><span class="cell c-avg">Season</span><span class="cell c-px">Price L10</span><span class="cell c-chg">Δ%</span></div>
+  <div class="hd"><span class="rk">#</span><span>Player</span><span>Last 15</span><span class="cell c-last">Last</span><span class="cell c-px">L10</span><span class="cell c-chg">Δ%</span></div>
   <div id="rows"></div>
 </div>
 <button class="more" id="moreBtn" hidden>Load 25 more</button>
@@ -259,15 +246,7 @@ function sparkSVG(v, chgClass){
 /* ---------- render ---------- */
 function render(){
   const players = data.players.map(p => ({p, m: metrics(p)}));
-  players.sort((a,b) => {
-    if (sortKey === "px") return b.m.l10 - a.m.l10;
-    if (sortKey === "live"){
-      const lv = x => { const l = liveMap[x.p.id]; return l && l.state !== "pre" ? liveVal(l) : -1; };
-      const d = lv(b) - lv(a);
-      if (d) return d;
-    }
-    return b.m.pct - a.m.pct;
-  });
+  players.sort((a,b) => b.m.pct - a.m.pct);
 
   // movers
   const byPct = [...players].sort((a,b)=>b.m.pct-a.m.pct);
@@ -356,7 +335,6 @@ function render(){
       <span class="who"><span class="nm">${p.name}${potnBadge(p.id)}</span><span class="tm">${p.team} · ${p.games.length} GP${liveLine}</span></span>
       <span class="spark">${sparkSVG(m.v, cls(m.chg))}</span>
       <span class="cell num last c-last">${lastCell}</span>
-      <span class="cell num last c-avg">${f1(m.season)}</span>
       <span class="cell num px c-px">${f1(m.l10)}</span>
       <span class="cell num c-chg ${cls(m.chg)}">${arrow(m.chg)} ${sgn(m.pct)}%</span>
       ${p.id === openId ? detailHTML(p, m) : ""}
@@ -446,12 +424,6 @@ tabsEl.addEventListener("click", e => {
   for (const x of tabsEl.children) x.setAttribute("aria-pressed", x === b);
   render();
 });
-document.getElementById("sorts").addEventListener("click", e => {
-  const b = e.target.closest("button[data-sort]"); if (!b) return;
-  sortKey = b.dataset.sort;
-  for (const x of b.parentElement.children) x.setAttribute("aria-pressed", x === b);
-  render();
-});
 document.getElementById("rows").addEventListener("click", e => {
   const r = e.target.closest(".row"); if (!r) return;
   openId = openId === r.dataset.id ? null : r.dataset.id;
@@ -459,57 +431,6 @@ document.getElementById("rows").addEventListener("click", e => {
 });
 addEventListener("resize", () => { if (openId) render(); });
 
-// add any player by name, even below the board floor; remembered in this browser
-async function addPlayerById(id, name, team){
-  if (data.players.some(p => String(p.id) === String(id))) return "already";
-  const p = await loadPlayer(id, name, team, data.season);
-  if (!p.games.length) return "nogames";
-  data.players.push(p);
-  makeSymbols(data.players);
-  render();
-  return "ok";
-}
-document.getElementById("addp").addEventListener("submit", async e => {
-  e.preventDefault();
-  const q = addq.value.trim();
-  if (!q || !data) return;
-  const btn = e.target.querySelector("button");
-  btn.disabled = true; btn.textContent = "…";
-  try {
-    const res = await j(`https://site.web.api.espn.com/apis/search/v2?region=us&lang=en&limit=10&query=${encodeURIComponent(q)}`);
-    let hit = null;
-    for (const r of res.results || []){
-      if (r.type !== "player") continue;
-      hit = (r.contents || []).find(c => /~l:46~a:\d+/.test(c.uid || ""));
-      if (hit) break;
-    }
-    if (!hit){ addq.value = ""; addq.placeholder = "No NBA player found"; }
-    else {
-      const id = hit.uid.match(/~a:(\d+)/)[1];
-      const out = await addPlayerById(id, hit.displayName, hit.subtitle || "");
-      if (out === "ok"){
-        try {
-          const saved = JSON.parse(localStorage.getItem("hwx-added") || "[]");
-          if (!saved.some(s => s.id === id)) saved.push({id, name: hit.displayName, team: hit.subtitle || ""});
-          localStorage.setItem("hwx-added", JSON.stringify(saved));
-        } catch (err) { /* private windows */ }
-        addq.value = ""; addq.placeholder = "Add player…";
-      } else {
-        addq.value = "";
-        addq.placeholder = out === "already" ? "Already on the board" : "No games this season";
-      }
-    }
-  } catch (err) { addq.placeholder = "Search failed"; }
-  btn.disabled = false; btn.textContent = "Add";
-});
-
-async function restoreAdded(){
-  let saved = [];
-  try { saved = JSON.parse(localStorage.getItem("hwx-added") || "[]"); } catch (e) { return; }
-  for (const s of saved){
-    try { await addPlayerById(s.id, s.name, s.team); } catch (e) { /* keep going */ }
-  }
-}
 
 /* ---------- data: snapshot now, live upgrade when the host allows fetch ---------- */
 function useSnapshot(){
@@ -567,7 +488,6 @@ async function tryLive(){
       makeSymbols(data.players);
       morePage = 5;                       // pages of 25; first 100 are loaded
       moreBtn.hidden = false;
-      document.getElementById("addp").hidden = false;
       document.getElementById("mkt").classList.add("live");
       mktTxt.textContent = `LIVE FEED · ${label} SEASON`;
       foot.textContent = `Price is a player's last-10-game average for the chosen stat; Δ% is that form against their season average. Board floor: 15+ minutes and 8+ points a game. Unofficial fan project. Stats: ESPN public API, ${label} regular season, fetched live on page load.`;
@@ -778,7 +698,7 @@ async function fetchReigning(){
 
 useSnapshot();
 if (/(^|[?&#])demo/.test(location.search + location.hash)) runDemo();
-else tryLive().finally(() => { restoreAdded().finally(pollLive); fetchReigning(); });
+else tryLive().finally(() => { pollLive(); fetchReigning(); });
 </script>
 
 </body>
