@@ -293,8 +293,8 @@ function render(){
         prevLive[key] = lv;
         lastCell = `<span class="livepx${flash}">${fi(lv)}</span>`;
         liveLine = l.state === "in"
-          ? ` · <span class="ldot">●</span> LIVE · ${l.score} ${l.opp}`
-          : ` · FINAL · ${l.score} ${l.opp}`;
+          ? ` · <span class="ldot">●</span> LIVE · ${l.score}`
+          : ` · FINAL · ${l.score}`;
       }
     }
     return `
