@@ -34,7 +34,10 @@ a{color:var(--amber)}
 .tk{display:inline-flex;gap:7px;margin-right:28px;font-size:12px}
 #currPlay{margin-top:4px}
 #currPlay .tk{display:grid;grid-template-columns:auto 1fr;gap:1px 7px;margin:0;font-size:13px}
-#currPlay .tkdelta{grid-column:2;font-size:15px}
+#currPlay .pl,#currPlay .ts{grid-column:2}
+#currPlay .tkdelta{font-size:17px}
+#currPlay .tot{color:var(--fg);font-weight:600;margin-left:4px}
+#currPlay .ts{color:var(--dim);font-size:10px;letter-spacing:.08em;text-transform:uppercase}
 .tk .sym{color:var(--amber);font-weight:600}
 .tk .px{color:var(--fg)}
 .tk .tknm{color:var(--fg);font-weight:600}
@@ -185,8 +188,11 @@ let pollTimer = null;     // one scheduled poll at a time, even if pollLive is k
 
 /* play-by-play: diff each poll's box lines; the Current box shows one play at a time */
 const prevBox = {};       // playerId -> last seen box line
-const EV_LABEL = {pts:"", reb:" REB", ast:" AST", stl:" STL", blk:" BLK"};
-const playHtml = (name, txt) => `<span class="tk ev"><span class="ldot">●</span><span class="tknm">${name}</span><span class="num up tkdelta">${txt}</span></span>`;
+const EV_LABEL = {pts:1, reb:1, ast:1, stl:1, blk:1};   // stats that produce a play
+const playHtml = (name, delta, total, when) => `<span class="tk ev"><span class="ldot">●</span><span class="tknm">${name}</span>`
+  + `<span class="pl"><span class="num up tkdelta">${delta}</span> <span class="num tot">${total}</span></span>`
+  + `<span class="num ts">${when}</span></span>`;
+const EV_TOTAL = {pts:"PTS", reb:"REB", ast:"AST", stl:"STL", blk:"BLK"};
 function emitEvents(id, name, line){
   const prev = prevBox[id];
   prevBox[id] = {pts:line.pts, reb:line.reb, ast:line.ast, stl:line.stl, blk:line.blk};
@@ -194,7 +200,7 @@ function emitEvents(id, name, line){
   const out = [];
   for (const k in EV_LABEL){
     const d = (line[k] || 0) - (prev[k] || 0);
-    if (d > 0) out.push(playHtml(name, `+${d}${EV_LABEL[k]}`));
+    if (d > 0) out.push(playHtml(name, `+${d}`, `${line[k]} ${EV_TOTAL[k]}`, line.detail || ""));
   }
   return out;
 }
@@ -203,7 +209,10 @@ function pushEvents(htmlList){
   playQueue.push(...htmlList);
   while (playQueue.length > 30) playQueue.shift();
 }
-setInterval(() => { if (playQueue.length) currPlay.innerHTML = playQueue.shift(); }, 2300);
+(function showNext(){
+  currPlay.innerHTML = playQueue.length ? playQueue.shift() : "";
+  setTimeout(showNext, playQueue.length > 12 ? 1300 : 2600);
+})();
 
 /* ---------- symbols ---------- */
 const SUFFIX = /\s+(jr\.?|sr\.?|ii|iii|iv|v)$/i;
@@ -649,15 +658,6 @@ async function pollLive(){
   const nPre = events.filter(e => e.status.type.state === "pre").length;
   if (nIn){
     currGames.hidden = true;
-    if (!currPlay.innerHTML && !playQueue.length){
-      // first look mid-game: lead with the top scorer until the plays start flowing
-      const top = Object.entries(newMap).filter(([, l]) => l.state === "in" && l.pts > 0)
-        .sort((x, y) => y[1].pts - x[1].pts)[0];
-      if (top){
-        const p = data.players.find(q => String(q.id) === top[0]);
-        if (p) currPlay.innerHTML = playHtml(p.name, `${top[1].pts} PTS`);
-      }
-    }
     pushEvents(evHtml);
   } else {
     currGames.hidden = false;
