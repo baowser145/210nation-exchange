@@ -93,7 +93,7 @@ button:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
 .up{color:var(--up)}
 .down{color:var(--down)}
 .flat{color:var(--dim)}
-.ipo{color:var(--amber);font-size:10px;letter-spacing:.12em}
+
 
 /* detail drawer */
 .detail{grid-column:1/-1;background:var(--panel2);border-top:1px solid var(--line);margin:9px -14px -9px;padding:14px 16px}
@@ -173,6 +173,7 @@ const STATS = [
   {key:"ast", label:"AST"},
   {key:"tpm", label:"3PM"},
   {key:"pra", label:"PRA"},
+  {key:"imp", label:"IMPACT"},
 ];
 let statKey = "pts";
 let sortKey = "chg";
@@ -232,30 +233,27 @@ function makeSymbols(players){
 }
 
 /* ---------- math ---------- */
-const val = (g) => statKey === "pra" ? g.pts + g.reb + g.ast : g[statKey];
+const val = (g) => statKey === "pra" ? g.pts + g.reb + g.ast : statKey === "imp" ? (g.gs || 0) : g[statKey];
 const avg = (arr) => arr.length ? arr.reduce((a,b)=>a+b,0) / arr.length : 0;
-// Δ% baseline: last season's average until a player has 10 games this season, then this season's
-const baseOf = (b) => statKey === "pra" ? b.pts + b.reb + b.ast : (b[statKey] || 0);
 // tonight's box-score line stands in for tonight's game: the game log lags, and can list
 // an in-progress game with empty stats
 function seasonGames(p){
   const l = liveMap[p.id];
   if (data.season !== 2027 || !l || l.state === "pre" || !l.eid) return p.games;
   return p.games.filter(g => g.eid !== l.eid)
-    .concat([{eid: l.eid, min: l.min, pts: l.pts, reb: l.reb, ast: l.ast, stl: l.stl, blk: l.blk, tpm: l.tpm}]);
+    .concat([{eid: l.eid, min: l.min, pts: l.pts, reb: l.reb, ast: l.ast, stl: l.stl, blk: l.blk, tpm: l.tpm, gs: l.gs}]);
 }
 function metrics(p){
   const v = seasonGames(p).map(val);
   const season = avg(v);
   const l10 = avg(v.slice(-10));
-  const early = v.length < 10 && data.season === 2027;
-  const ipo = early && !p.base;
-  const base = early && p.base ? baseOf(p.base) : season;
-  const chg = ipo ? 0 : l10 - base;
-  const pct = !ipo && base > 0 ? chg / base * 100 : 0;
-  return {v, season, base, early, ipo, l10, chg, pct, last: v[v.length-1] ?? 0, hi: Math.max(0,...v), lo: v.length?Math.min(...v):0};
+  // until a player has 11+ games, L10 *is* his season average, so there is no move to show
+  const ready = v.length > 10;
+  const chg = ready ? l10 - season : 0;
+  const pct = ready && season > 0 ? chg / season * 100 : null;
+  return {v, season, l10, chg, pct, last: v[v.length-1] ?? 0, hi: Math.max(0,...v), lo: v.length?Math.min(...v):0};
 }
-const liveVal = (l) => statKey === "pra" ? l.pts + l.reb + l.ast : (l[statKey] || 0);
+const liveVal = (l) => statKey === "pra" ? l.pts + l.reb + l.ast : statKey === "imp" ? (l.gs || 0) : (l[statKey] || 0);
 // the board floor: 15+ minutes and 8+ points a game, this season
 const qualifies = (p) => p.games.length
   && avg(p.games.map(g => g.min)) >= 15
@@ -288,13 +286,20 @@ function sparkSVG(v, chgClass){
 /* ---------- render ---------- */
 function render(){
   const players = data.players.map(p => ({p, m: metrics(p)}));
-  players.sort((a,b) => b.m.pct - a.m.pct);
+  const pctKey = x => x.m.pct ?? -Infinity;
+  players.sort((a,b) => (pctKey(b) - pctKey(a)) || (b.m.l10 - a.m.l10));
 
   // movers
-  const byPct = [...players].sort((a,b)=>b.m.pct-a.m.pct);
-  const g = byPct[0], l = byPct[byPct.length-1];
-  gainer.textContent = g.p.name; gainerChg.textContent = `${arrow(1)} ${sgn(g.m.pct)}%`; gainerChg.className = "chg num up";
-  loser.textContent = l.p.name; loserChg.textContent = `${arrow(-1)} ${sgn(l.m.pct)}%`; loserChg.className = "chg num down";
+  const movers = players.filter(x => x.m.pct !== null);
+  if (movers.length){
+    const g = movers[0], l = movers[movers.length-1];
+    gainer.textContent = g.p.name; gainerChg.textContent = `${arrow(1)} ${sgn(g.m.pct)}%`; gainerChg.className = "chg num up";
+    loser.textContent = l.p.name; loserChg.textContent = `${arrow(-1)} ${sgn(l.m.pct)}%`; loserChg.className = "chg num down";
+  } else {
+    gainer.textContent = loser.textContent = "—";
+    gainerChg.textContent = loserChg.textContent = "Starts after 10 games";
+    gainerChg.className = loserChg.className = "chg num flat";
+  }
 
 
   // rows — on game days, today's slate gets its own section up top
@@ -318,15 +323,15 @@ function render(){
     <button class="row" data-id="${p.id}" aria-expanded="${p.id===openId}">
       <span class="rk num">${i+1}</span>
       <span class="who"><span class="nm">${p.name}${potnBadge(p.id)}</span><span class="tm">${(l && l.team) || p.team} · ${m.v.length} GP${liveLine}</span></span>
-      <span class="spark">${sparkSVG(m.early && p.base ? [m.base, ...m.v] : m.v, cls(m.chg))}</span>
+      <span class="spark">${sparkSVG(m.v, cls(m.chg))}</span>
       <span class="cell num last c-last">${lastCell}</span>
       <span class="cell num px c-px">${f1(m.l10)}</span>
-      ${m.ipo ? '<span class="cell c-chg ipo" title="Rookie: no NBA history yet">IPO</span>' : `<span class="cell num c-chg ${cls(m.chg)}">${arrow(m.chg)} ${sgn(m.pct)}%</span>`}
+      ${m.pct === null ? '<span class="cell c-chg flat" title="Shows once he has 11+ games">—</span>' : `<span class="cell num c-chg ${cls(m.chg)}">${arrow(m.chg)} ${sgn(m.pct)}%</span>`}
       ${p.id === openId ? detailHTML(p, m) : ""}
     </button>`;};
   // today's slate: live games first, then finals, then later tips; each ranked by tonight's numbers
   const sec = t => `<div class="sechd">${t}</div>`;
-  const byTonight = (a,b) => (liveVal(liveMap[b.p.id]) - liveVal(liveMap[a.p.id])) || (b.m.pct - a.m.pct);
+  const byTonight = (a,b) => (liveVal(liveMap[b.p.id]) - liveVal(liveMap[a.p.id])) || (b.m.l10 - a.m.l10);
   const inState = st => players.filter(x => liveMap[x.p.id] && liveMap[x.p.id].state === st);
   const groups = [
     ["Live now", inState("in").sort(byTonight)],
@@ -362,7 +367,7 @@ function detailHTML(p, m){
       <span><span class="k">Season low</span><span class="num">${f1(m.lo)}</span></span>
     </span>
     <canvas id="ch-${p.id}" height="150"></canvas>
-    <span class="legend"><span><i style="background:var(--amber)"></i>game ${STATS.find(s=>s.key===statKey).label}</span><span><i style="background:var(--dim)"></i>${m.early && p.base ? "last season avg" : "season avg"}</span></span>
+    <span class="legend"><span><i style="background:var(--amber)"></i>game ${STATS.find(s=>s.key===statKey).label}</span><span><i style="background:var(--dim)"></i>season avg</span></span>
   </span>`;
 }
 
@@ -377,7 +382,7 @@ function drawChart(canvas, p){
   const ctx = canvas.getContext("2d");
   ctx.scale(dpr,dpr);
   const padL = 26, padR = 4, padT = 8, padB = 4;
-  const hi = Math.max(m.hi, m.base, 1);
+  const hi = Math.max(m.hi, 1);
   const y = (v) => padT + (H-padT-padB) * (1 - v/hi);
   const n = m.v.length;
   const bw = Math.max(1, (W-padL-padR)/n - 1.2);
@@ -398,16 +403,16 @@ function drawChart(canvas, p){
     ctx.fillRect(x, y(v), bw, H-padB-y(v));
   });
   ctx.globalAlpha = 1;
-  // baseline line (the Δ% reference)
+  // season average line (the Δ% reference)
   ctx.strokeStyle = cssVar("--dim"); ctx.setLineDash([4,3]);
-  const by = y(m.base);
+  const by = y(m.season);
   ctx.beginPath(); ctx.moveTo(padL, by); ctx.lineTo(W-padR, by); ctx.stroke();
   ctx.setLineDash([]);
 }
 
 /* ---------- controls ---------- */
 const tabsEl = document.getElementById("tabs");
-tabsEl.innerHTML = STATS.map(s => `<button data-stat="${s.key}" aria-pressed="${s.key===statKey}">${s.label}</button>`).join("");
+tabsEl.innerHTML = STATS.map(s => `<button data-stat="${s.key}" aria-pressed="${s.key===statKey}"${s.key === "imp" ? " hidden" : ""}>${s.label}</button>`).join("");
 tabsEl.addEventListener("click", e => {
   const b = e.target.closest("button[data-stat]"); if (!b) return;
   statKey = b.dataset.stat;
@@ -435,31 +440,20 @@ const API = "https://site.web.api.espn.com/apis/common/v3/sports/basketball/nba"
 const Q = "region=us&lang=en&contentorigin=espn";
 async function j(url){ const r = await fetch(url); if (!r.ok) throw new Error(r.status); return r.json(); }
 
-let BASES = {};          // playerId -> most recent prior season's per-game {pts, reb, ast, tpm}
-async function fetchBases(){
-  const [older, last] = await Promise.all([2025, 2026].map(s => fetchSeasonAvgs(s).catch(() => ({}))));
-  return {...older, ...last};
-}
-async function fetchSeasonAvgs(season){
-  const d = await j(`${API}/statistics/byathlete?${Q}&limit=1000&sort=offensive.avgPoints:desc&season=${season}&seasontype=2`);
-  const names = {};
-  for (const c of d.categories || []) names[c.name] = c.names || [];
-  const out = {};
-  for (const r of d.athletes || []){
-    const get = (cat, nm) => { const c = (r.categories || []).find(x => x.name === cat); const i = (names[cat] || []).indexOf(nm); return c && i >= 0 ? c.values[i] : 0; };
-    out[String(r.athlete.id)] = {pts: get("offensive","avgPoints"), reb: get("general","avgRebounds"),
-      ast: get("offensive","avgAssists"), tpm: get("offensive","avgThreePointFieldGoalsMade")};
-  }
-  return out;
-}
-
 async function loadPlayer(id, name, team, season){
   const gl = await j(`${API}/athletes/${id}/gamelog?${Q}&season=${season}`);
   const names = gl.names || [];
   const ix = {};
-  for (const k of ["minutes","points","totalRebounds","assists","steals","blocks","threePointFieldGoalsMade-threePointFieldGoalsAttempted"])
+  for (const k of ["minutes","points","totalRebounds","assists","steals","blocks","threePointFieldGoalsMade-threePointFieldGoalsAttempted",
+                   "fieldGoalsMade-fieldGoalsAttempted","freeThrowsMade-freeThrowsAttempted","turnovers","fouls"])
     ix[k] = names.indexOf(k);
   const num = (stats,k) => { const i = ix[k]; if (i<0 || i>=stats.length) return 0; const v = parseFloat(String(stats[i]).split("-")[0]); return isNaN(v)?0:v; };
+  const att = (stats,k) => { const i = ix[k]; if (i<0 || i>=stats.length) return 0; const v = parseFloat(String(stats[i]).split("-")[1]); return isNaN(v)?0:v; };
+  // Game Score; game logs don't split rebounds, so each counts 0.4 (league-typical blend of 0.7 offensive, 0.3 defensive)
+  const gs = s => num(s,"points") + 0.4*num(s,"fieldGoalsMade-fieldGoalsAttempted") - 0.7*att(s,"fieldGoalsMade-fieldGoalsAttempted")
+    - 0.4*(att(s,"freeThrowsMade-freeThrowsAttempted") - num(s,"freeThrowsMade-freeThrowsAttempted"))
+    + 0.4*num(s,"totalRebounds") + num(s,"steals") + 0.7*num(s,"assists") + 0.7*num(s,"blocks")
+    - 0.4*num(s,"fouls") - num(s,"turnovers");
   const games = [];
   for (const st of gl.seasonTypes || []){
     if (!/Regular Season/.test(st.displayName || "")) continue;
@@ -469,11 +463,11 @@ async function loadPlayer(id, name, team, season){
         games.push({eid: String(ev.eventId), d: meta.gameDate || "", opp:(meta.opponent||{}).abbreviation || "",
           min:num(ev.stats,"minutes"), pts:num(ev.stats,"points"), reb:num(ev.stats,"totalRebounds"),
           ast:num(ev.stats,"assists"), stl:num(ev.stats,"steals"), blk:num(ev.stats,"blocks"),
-          tpm:num(ev.stats,"threePointFieldGoalsMade-threePointFieldGoalsAttempted")});
+          tpm:num(ev.stats,"threePointFieldGoalsMade-threePointFieldGoalsAttempted"), gs: gs(ev.stats)});
       }
   }
   games.sort((x,y) => x.d < y.d ? -1 : 1);
-  return {id: String(id), name, team, games, base: BASES[String(id)]};
+  return {id: String(id), name, team, games};
 }
 
 async function fetchPlayers(season, page, limit){
@@ -489,8 +483,6 @@ let morePage = 0;
 async function tryLive(){
   for (const season of [2027, 2026]){
     try {
-      if (season === 2027){ try { BASES = await fetchBases(); } catch (e) { BASES = {}; } }
-      else BASES = {};
       const players = (await fetchPlayers(season, 1, 100)).filter(p => p.games.length >= 1 && qualifies(p));
       if (players.length < 8) continue;
       const label = season === 2027 ? "2026-27" : "2025-26";
@@ -498,11 +490,12 @@ async function tryLive(){
       autoTried.clear();   // the fresh board dropped any auto-added scorers; let the next poll re-add them
       makeSymbols(data.players);
       morePage = 5;                       // pages of 25; first 100 are loaded
+      tabsEl.querySelector('[data-stat="imp"]').hidden = false;
       moreBtn.hidden = false;
       document.getElementById("mkt").classList.add("live");
       mktTxt.textContent = `LIVE FEED · ${label} SEASON`;
       foot.textContent = season === 2027
-        ? `L10 is a player's average over his last 10 games this season (or all of them, early on). Δ% compares that to last season's average until he has 10 games, then to this season's. IPO means no NBA history yet. Board floor: 15+ minutes and 8+ points a game. Unofficial fan project. Stats: ESPN public API, ${label} regular season, fetched live.`
+        ? `L10 is a player's average over his last 10 games this season (all of them, early on). Δ% compares L10 to his season average and appears once he has 11+ games. Impact is Hollinger's Game Score. Board floor: 15+ minutes and 8+ points a game. Unofficial fan project. Stats: ESPN public API, ${label} regular season, fetched live.`
         : `L10 is a player's last-10-game average for the chosen stat; Δ% is that form against their season average. Board floor: 15+ minutes and 8+ points a game. Unofficial fan project. Stats: ESPN public API, ${label} regular season, fetched live.`;
       render();
       return;
@@ -606,7 +599,7 @@ async function pollLive(){
         const line = {eid: String(e.id), state: st.state, detail: st.shortDetail || "", opp: opp ? opp.abbreviation : "", team: (t.team || {}).abbreviation || "",
           min:num("minutes"), pts:num("points"), reb:num("rebounds"), ast:num("assists"),
           stl:num("steals"), blk:num("blocks"),
-          tpm:num("threePointFieldGoalsMade-threePointFieldGoalsAttempted")};
+          tpm:num("threePointFieldGoalsMade-threePointFieldGoalsAttempted"), gs: b ? b.gs : 0};
         if (line.state === "in") inGame.push([id, a.athlete.displayName, line]);
         if (boardIds.has(id)) newMap[id] = line;
         else if (line.pts > 0 && !autoTried.has(id))
