@@ -122,11 +122,12 @@ footer{color:var(--dim);font-size:11px;margin-top:22px;max-width:70ch}
   .idx .lbl{font-size:9px;letter-spacing:.1em}
   .hd{display:none}
   .rk{display:none}
-  .row{grid-template-areas:"who who who who" ". last px chg";grid-template-columns:1fr 44px 54px 86px;gap:6px 8px;padding:11px 10px}
+  .row{grid-template-areas:"who who who who" ". last px chg";grid-template-columns:1fr 58px 64px 86px;gap:6px 8px;padding:11px 10px}
   .row .who{grid-area:who}
   .row .c-last{grid-area:last}
   .row .c-px{grid-area:px}
   .row .c-chg{grid-area:chg}
+  .row .cell::before{content:attr(data-l);display:block;font-size:9px;font-weight:400;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);margin-bottom:2px}
   .who .nm{font-size:13px}
   .sechd{padding:7px 10px}
   .detail{margin:9px -10px -11px}
@@ -248,7 +249,13 @@ function metrics(p){
   const ready = v.length > 10;
   const chg = ready ? l10 - season : 0;
   const pct = ready && season > 0 ? chg / season * 100 : null;
-  return {v, season, l10, chg, pct, last: v[v.length-1] ?? 0, hi: Math.max(0,...v), lo: v.length?Math.min(...v):0};
+  // the day's move: his latest finished game against his average before it (a game in progress doesn't count)
+  const live = liveMap[p.id];
+  const done = live && live.state === "in" ? v.slice(0, -1) : v;
+  const prior = avg(done.slice(0, -1));
+  const latest = done[done.length-1];
+  const move = done.length >= 2 && prior > 0 ? (latest - prior) / prior * 100 : null;
+  return {v, season, l10, chg, pct, move, latest, prior, last: v[v.length-1] ?? 0, hi: Math.max(0,...v), lo: v.length?Math.min(...v):0};
 }
 const liveVal = (l) => statKey === "pra" ? l.pts + l.reb + l.ast : statKey === "imp" ? (l.gs || 0) : (l[statKey] || 0);
 // the board floor: 15+ minutes and 8+ points a game, this season
@@ -268,14 +275,16 @@ function render(){
   players.sort((a,b) => (pctKey(b) - pctKey(a)) || (b.m.l10 - a.m.l10));
 
   // movers
-  const movers = players.filter(x => x.m.pct !== null);
+  // rotation players only (the board floor), so a deep-bench cameo can't top the list
+  const movers = players.filter(x => x.m.move !== null && qualifies(x.p)).sort((a,b) => b.m.move - a.m.move);
+  const moveTxt = m => `${arrow(m.move)} ${sgn(m.move)}% · ${fi(m.latest)} vs ${f1(m.prior)} avg`;
   if (movers.length){
     const g = movers[0], l = movers[movers.length-1];
-    gainer.textContent = g.p.name; gainerChg.textContent = `${arrow(1)} ${sgn(g.m.pct)}%`; gainerChg.className = "chg num up";
-    loser.textContent = l.p.name; loserChg.textContent = `${arrow(-1)} ${sgn(l.m.pct)}%`; loserChg.className = "chg num down";
+    gainer.textContent = g.p.name; gainerChg.textContent = moveTxt(g.m); gainerChg.className = "chg num " + cls(g.m.move);
+    loser.textContent = l.p.name; loserChg.textContent = moveTxt(l.m); loserChg.className = "chg num " + cls(l.m.move);
   } else {
     gainer.textContent = loser.textContent = "—";
-    gainerChg.textContent = loserChg.textContent = "Starts after 10 games";
+    gainerChg.textContent = loserChg.textContent = "Starts after 2 games";
     gainerChg.className = loserChg.className = "chg num flat";
   }
 
@@ -301,9 +310,9 @@ function render(){
     <button class="row" data-id="${p.id}" aria-expanded="${p.id===openId}">
       <span class="rk num">${i+1}</span>
       <span class="who"><span class="nm">${p.name} (${(l && l.team) || p.team})${potnBadge(p.id)}</span><span class="tm">${m.v.length} GP${liveLine}</span></span>
-      <span class="cell num last c-last">${lastCell}</span>
-      <span class="cell num px c-px">${f1(m.l10)}</span>
-      ${m.pct === null ? '<span class="cell c-chg flat" title="Shows once he has 11+ games">—</span>' : `<span class="cell num c-chg ${cls(m.chg)}">${arrow(m.chg)} ${sgn(m.pct)}%</span>`}
+      <span class="cell num last c-last" data-l="${l && l.state !== "pre" ? "Tonight" : "Last"}">${lastCell}</span>
+      <span class="cell num px c-px" data-l="Avg L10">${f1(m.l10)}</span>
+      ${m.pct === null ? '<span class="cell c-chg flat" data-l="Δ%" title="Shows once he has 11+ games">—</span>' : `<span class="cell num c-chg ${cls(m.chg)}" data-l="Δ%">${arrow(m.chg)} ${sgn(m.pct)}%</span>`}
       ${p.id === openId ? detailHTML(p, m) : ""}
     </button>`;};
   // today's slate: live games first, then finals, then later tips; each ranked by tonight's numbers
