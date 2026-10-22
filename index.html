@@ -34,10 +34,7 @@ a{color:var(--amber)}
 .tk{display:inline-flex;gap:7px;margin-right:28px;font-size:12px}
 #currPlay{margin-top:4px}
 #currPlay .tk{display:grid;grid-template-columns:auto 1fr;gap:1px 7px;margin:0;font-size:13px}
-#currPlay .pl,#currPlay .ts{grid-column:2}
-#currPlay .tkdelta{font-size:17px}
-#currPlay .tot{color:var(--fg);font-weight:600;margin-left:4px}
-#currPlay .ts{color:var(--dim);font-size:10px;letter-spacing:.08em;text-transform:uppercase}
+#currPlay .pl{grid-column:2;font-size:17px;font-weight:600}
 .tk .sym{color:var(--amber);font-weight:600}
 .tk .px{color:var(--fg)}
 .tk .tknm{color:var(--fg);font-weight:600}
@@ -189,9 +186,8 @@ let pollTimer = null;     // one scheduled poll at a time, even if pollLive is k
 /* play-by-play: diff each poll's box lines; the Current box shows one play at a time */
 const prevBox = {};       // playerId -> last seen box line
 const EV_LABEL = {pts:1, reb:1, ast:1, stl:1, blk:1};   // stats that produce a play
-const playHtml = (name, delta, total, when) => `<span class="tk ev"><span class="ldot">●</span><span class="tknm">${name}</span>`
-  + `<span class="pl"><span class="num up tkdelta">${delta}</span> <span class="num tot">${total}</span></span>`
-  + `<span class="num ts">${when}</span></span>`;
+const playHtml = (name, total) => `<span class="tk ev"><span class="ldot">●</span><span class="tknm">${name}</span>`
+  + `<span class="pl num up">${total}</span></span>`;
 const EV_TOTAL = {pts:"PTS", reb:"REB", ast:"AST", stl:"STL", blk:"BLK"};
 function emitEvents(id, name, line){
   const prev = prevBox[id];
@@ -200,7 +196,7 @@ function emitEvents(id, name, line){
   const out = [];
   for (const k in EV_LABEL){
     const d = (line[k] || 0) - (prev[k] || 0);
-    if (d > 0) out.push(playHtml(name, `+${d}`, `${line[k]} ${EV_TOTAL[k]}`, line.detail || ""));
+    if (d > 0) out.push(playHtml(name, `${line[k]} ${EV_TOTAL[k]}`));
   }
   return out;
 }
