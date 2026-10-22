@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Hardwood Exchange</title>
+<title>The 210Nation Exchange</title>
 </head>
 <body>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <style>
-/* Layout: one dark exchange board — ticker tape up top, index strip, stat board below. Single-theme by design. */
+/* Layout: one dark exchange board — four-tile strip up top, stat board below. Single-theme by design. */
 :root{
   --bg:#0a0e16;
   --panel:#101624;
@@ -31,13 +31,10 @@ a{color:var(--amber)}
 /* play chip (Current box) */
 .ev{animation:pop .45s ease-out both}
 @keyframes pop{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:none}}
-.tape:hover .tape-track{animation-play-state:paused}
-@keyframes tape{from{transform:translateX(0)}to{transform:translateX(-50%)}}
-@media (prefers-reduced-motion:reduce){
-  .tape{overflow-x:auto}
-  .tape-track{animation:none}
-}
 .tk{display:inline-flex;gap:7px;margin-right:28px;font-size:12px}
+#currPlay{margin-top:4px}
+#currPlay .tk{display:grid;grid-template-columns:auto 1fr;gap:1px 7px;margin:0;font-size:13px}
+#currPlay .tkdelta{grid-column:2;font-size:15px}
 .tk .sym{color:var(--amber);font-weight:600}
 .tk .px{color:var(--fg)}
 .tk .tknm{color:var(--fg);font-weight:600}
@@ -75,7 +72,7 @@ button:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
 
 /* board */
 .board{border:1px solid var(--line);background:var(--panel)}
-.row,.hd{display:grid;grid-template-columns:30px minmax(130px,1.5fr) 110px 64px 84px 64px;gap:10px;align-items:center;padding:9px 14px}
+.row,.hd{display:grid;grid-template-columns:30px minmax(130px,1.5fr) 110px 56px 70px 92px;gap:10px;align-items:center;padding:9px 14px}
 .hd{font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--dim);border-bottom:1px solid var(--line);position:sticky;top:env(safe-area-inset-top,0px);background:var(--panel);z-index:2}
 .row{border-bottom:1px solid var(--line);cursor:pointer;background:none;border-inline:0;border-top:0;width:100%;text-align:left;font:inherit;color:inherit}
 .row:last-of-type{border-bottom:0}
@@ -90,12 +87,13 @@ button:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
 .who .tm{color:var(--dim);font-size:10px;letter-spacing:.08em}
 .spark{height:30px}
 .spark svg{display:block;width:100%;height:30px}
-.cell{text-align:right}
+.cell{text-align:right;white-space:nowrap}
 .last{color:var(--dim)}
 .px{font-weight:600}
 .up{color:var(--up)}
 .down{color:var(--down)}
 .flat{color:var(--dim)}
+.ipo{color:var(--amber);font-size:10px;letter-spacing:.12em}
 
 /* detail drawer */
 .detail{grid-column:1/-1;background:var(--panel2);border-top:1px solid var(--line);margin:9px -14px -9px;padding:14px 16px}
@@ -119,12 +117,14 @@ footer{color:var(--dim);font-size:11px;margin-top:22px;max-width:70ch}
 
 @media (max-width:640px){
   h1{font-size:30px}
-  .tk{font-size:11px;margin-right:22px}
-  .idx{padding:8px 11px}
+  .strip{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .idx{padding:8px 10px}
   .idx .val{font-size:21px}
+  #gainer,#loser,#potnName{font-size:16px}
+  .idx .lbl{font-size:9px;letter-spacing:.1em}
   .hd{display:none}
   .rk{display:none}
-  .row{grid-template-areas:"who who who who" "spark last px chg";grid-template-columns:1fr 44px 54px 78px;gap:6px 9px;padding:11px 10px}
+  .row{grid-template-areas:"who who who who" "spark last px chg";grid-template-columns:1fr 40px 50px 86px;gap:6px 8px;padding:11px 10px}
   .row .who{grid-area:who}
   .row .spark{grid-area:spark}
   .row .c-last{grid-area:last}
@@ -138,7 +138,7 @@ footer{color:var(--dim);font-size:11px;margin-top:22px;max-width:70ch}
 
 <div class="wrap">
 <header>
-  <h1>HARDWOOD E<span class="x">X</span>CHANGE</h1>
+  <h1>THE 210NATION E<span class="x">X</span>CHANGE</h1>
   <span class="mkt" id="mkt"><span class="dot"></span><span id="mktTxt">LOADING</span></span>
 </header>
 <div class="strip">
@@ -229,20 +229,34 @@ function makeSymbols(players){
 /* ---------- math ---------- */
 const val = (g) => statKey === "pra" ? g.pts + g.reb + g.ast : g[statKey];
 const avg = (arr) => arr.length ? arr.reduce((a,b)=>a+b,0) / arr.length : 0;
+// Δ% baseline: last season's average until a player has 10 games this season, then this season's
+const baseOf = (b) => statKey === "pra" ? b.pts + b.reb + b.ast : (b[statKey] || 0);
+// tonight's box-score line stands in for tonight's game: the game log lags, and can list
+// an in-progress game with empty stats
+function seasonGames(p){
+  const l = liveMap[p.id];
+  if (data.season !== 2027 || !l || l.state === "pre" || !l.eid) return p.games;
+  return p.games.filter(g => g.eid !== l.eid)
+    .concat([{eid: l.eid, min: l.min, pts: l.pts, reb: l.reb, ast: l.ast, stl: l.stl, blk: l.blk, tpm: l.tpm}]);
+}
 function metrics(p){
-  const v = p.games.map(val);
+  const v = seasonGames(p).map(val);
   const season = avg(v);
   const l10 = avg(v.slice(-10));
-  const chg = l10 - season;
-  const pct = season > 0 ? chg / season * 100 : 0;
-  return {v, season, l10, chg, pct, last: v[v.length-1] ?? 0, hi: Math.max(0,...v), lo: v.length?Math.min(...v):0};
+  const early = v.length < 10 && data.season === 2027;
+  const ipo = early && !p.base;
+  const base = early && p.base ? baseOf(p.base) : season;
+  const chg = ipo ? 0 : l10 - base;
+  const pct = !ipo && base > 0 ? chg / base * 100 : 0;
+  return {v, season, base, early, ipo, l10, chg, pct, last: v[v.length-1] ?? 0, hi: Math.max(0,...v), lo: v.length?Math.min(...v):0};
 }
 const liveVal = (l) => statKey === "pra" ? l.pts + l.reb + l.ast : (l[statKey] || 0);
 // the board floor: 15+ minutes and 8+ points a game, this season
 const qualifies = (p) => p.games.length
   && avg(p.games.map(g => g.min)) >= 15
-  && avg(p.games.map(g => g.pts)) > 8;
+  && avg(p.games.map(g => g.pts)) > 8;   // live lines are added after this check, so a first game counts once it's over
 const f1 = (x) => x.toFixed(1);
+const fi = (x) => Number.isInteger(x) ? String(x) : x.toFixed(1);   // single-game stats are whole numbers
 const sgn = (x) => (x >= 0 ? "+" : "−") + Math.abs(x).toFixed(1);
 const cls = (x) => Math.abs(x) < 0.05 ? "flat" : x > 0 ? "up" : "down";
 const arrow = (x) => Math.abs(x) < 0.05 ? "·" : x > 0 ? "▲" : "▼";
@@ -281,7 +295,7 @@ function render(){
   // rows — on game days, today's slate gets its own section up top
   const rowHTML = ({p,m}, i) => {
     const l = liveMap[p.id];
-    let liveLine = "", lastCell = f1(m.last);
+    let liveLine = "", lastCell = fi(m.last);
     if (l){
       if (l.state === "pre") liveLine = ` · <span class="ldot">●</span> TONIGHT ${l.detail} vs ${l.opp}`;
       else {
@@ -289,7 +303,7 @@ function render(){
         const key = p.id + ":" + statKey;
         const flash = prevLive[key] !== undefined && prevLive[key] !== lv ? " flash" : "";
         prevLive[key] = lv;
-        lastCell = `<span class="livepx${flash}">${f1(lv)}</span>`;
+        lastCell = `<span class="livepx${flash}">${fi(lv)}</span>`;
         liveLine = l.state === "in"
           ? ` · <span class="ldot">●</span> LIVE ${l.detail} vs ${l.opp}`
           : ` · FINAL vs ${l.opp}`;
@@ -298,21 +312,25 @@ function render(){
     return `
     <button class="row" data-id="${p.id}" aria-expanded="${p.id===openId}">
       <span class="rk num">${i+1}</span>
-      <span class="who"><span class="nm">${p.name}${potnBadge(p.id)}</span><span class="tm">${p.team} · ${p.games.length} GP${liveLine}</span></span>
-      <span class="spark">${sparkSVG(m.v, cls(m.chg))}</span>
+      <span class="who"><span class="nm">${p.name}${potnBadge(p.id)}</span><span class="tm">${(l && l.team) || p.team} · ${m.v.length} GP${liveLine}</span></span>
+      <span class="spark">${sparkSVG(m.early && p.base ? [m.base, ...m.v] : m.v, cls(m.chg))}</span>
       <span class="cell num last c-last">${lastCell}</span>
       <span class="cell num px c-px">${f1(m.l10)}</span>
-      <span class="cell num c-chg ${cls(m.chg)}">${arrow(m.chg)} ${sgn(m.pct)}%</span>
+      ${m.ipo ? '<span class="cell c-chg ipo" title="Rookie: no NBA history yet">IPO</span>' : `<span class="cell num c-chg ${cls(m.chg)}">${arrow(m.chg)} ${sgn(m.pct)}%</span>`}
       ${p.id === openId ? detailHTML(p, m) : ""}
     </button>`;};
-  const act = players.filter(x => liveMap[x.p.id]);
-  // today's section is always a live scoreboard: in-game numbers first, pre-tip players last
-  const lvOf = x => { const l = liveMap[x.p.id]; return l.state !== "pre" ? liveVal(l) : -1; };
-  act.sort((a,b) => (lvOf(b) - lvOf(a)) || (b.m.pct - a.m.pct));
+  // today's slate: live games first, then finals, then later tips; each ranked by tonight's numbers
   const sec = t => `<div class="sechd">${t}</div>`;
-  if (act.length){
+  const byTonight = (a,b) => (liveVal(liveMap[b.p.id]) - liveVal(liveMap[a.p.id])) || (b.m.pct - a.m.pct);
+  const inState = st => players.filter(x => liveMap[x.p.id] && liveMap[x.p.id].state === st);
+  const groups = [
+    ["Live now", inState("in").sort(byTonight)],
+    ["Final today", inState("post").sort(byTonight)],
+    ["Later today", inState("pre")],
+  ].filter(([, list]) => list.length);
+  if (groups.length){
     const rest = players.filter(x => !liveMap[x.p.id]);
-    rows.innerHTML = sec(`In action today · ${act.length}`) + act.map(rowHTML).join("")
+    rows.innerHTML = groups.map(([t, list]) => sec(`${t} · ${list.length}`) + list.map(rowHTML).join("")).join("")
       + sec(`Rest of board · ${rest.length}`) + rest.map(rowHTML).join("");
   } else {
     rows.innerHTML = players.map(rowHTML).join("");
@@ -328,7 +346,7 @@ function detailHTML(p, m){
   const l5 = avg(m.v.slice(-5));
   const l = liveMap[p.id];
   const tonight = l && l.state !== "pre"
-    ? `<span><span class="k">Tonight</span><span class="num livepx">${f1(liveVal(l))} ${STATS.find(s=>s.key===statKey).label} · ${l.state === "in" ? l.detail : "FINAL"}</span></span>`
+    ? `<span><span class="k">Tonight</span><span class="num livepx">${fi(liveVal(l))} ${STATS.find(s=>s.key===statKey).label} · ${l.state === "in" ? l.detail : "FINAL"}</span></span>`
     : "";
   return `<span class="detail">
     <span class="dstats">${tonight}
@@ -339,7 +357,7 @@ function detailHTML(p, m){
       <span><span class="k">Season low</span><span class="num">${f1(m.lo)}</span></span>
     </span>
     <canvas id="ch-${p.id}" height="150"></canvas>
-    <span class="legend"><span><i style="background:var(--amber)"></i>game ${STATS.find(s=>s.key===statKey).label}</span><span><i style="background:var(--dim)"></i>season avg</span></span>
+    <span class="legend"><span><i style="background:var(--amber)"></i>game ${STATS.find(s=>s.key===statKey).label}</span><span><i style="background:var(--dim)"></i>${m.early && p.base ? "last season avg" : "season avg"}</span></span>
   </span>`;
 }
 
@@ -354,7 +372,7 @@ function drawChart(canvas, p){
   const ctx = canvas.getContext("2d");
   ctx.scale(dpr,dpr);
   const padL = 26, padR = 4, padT = 8, padB = 4;
-  const hi = Math.max(m.hi, 1);
+  const hi = Math.max(m.hi, m.base, 1);
   const y = (v) => padT + (H-padT-padB) * (1 - v/hi);
   const n = m.v.length;
   const bw = Math.max(1, (W-padL-padR)/n - 1.2);
@@ -375,9 +393,10 @@ function drawChart(canvas, p){
     ctx.fillRect(x, y(v), bw, H-padB-y(v));
   });
   ctx.globalAlpha = 1;
-  // season avg line
+  // baseline line (the Δ% reference)
   ctx.strokeStyle = cssVar("--dim"); ctx.setLineDash([4,3]);
-  ctx.beginPath(); ctx.moveTo(padL, y(m.season)); ctx.lineTo(W-padR, y(m.season)); ctx.stroke();
+  const by = y(m.base);
+  ctx.beginPath(); ctx.moveTo(padL, by); ctx.lineTo(W-padR, by); ctx.stroke();
   ctx.setLineDash([]);
 }
 
@@ -411,6 +430,24 @@ const API = "https://site.web.api.espn.com/apis/common/v3/sports/basketball/nba"
 const Q = "region=us&lang=en&contentorigin=espn";
 async function j(url){ const r = await fetch(url); if (!r.ok) throw new Error(r.status); return r.json(); }
 
+let BASES = {};          // playerId -> most recent prior season's per-game {pts, reb, ast, tpm}
+async function fetchBases(){
+  const [older, last] = await Promise.all([2025, 2026].map(s => fetchSeasonAvgs(s).catch(() => ({}))));
+  return {...older, ...last};
+}
+async function fetchSeasonAvgs(season){
+  const d = await j(`${API}/statistics/byathlete?${Q}&limit=1000&sort=offensive.avgPoints:desc&season=${season}&seasontype=2`);
+  const names = {};
+  for (const c of d.categories || []) names[c.name] = c.names || [];
+  const out = {};
+  for (const r of d.athletes || []){
+    const get = (cat, nm) => { const c = (r.categories || []).find(x => x.name === cat); const i = (names[cat] || []).indexOf(nm); return c && i >= 0 ? c.values[i] : 0; };
+    out[String(r.athlete.id)] = {pts: get("offensive","avgPoints"), reb: get("general","avgRebounds"),
+      ast: get("offensive","avgAssists"), tpm: get("offensive","avgThreePointFieldGoalsMade")};
+  }
+  return out;
+}
+
 async function loadPlayer(id, name, team, season){
   const gl = await j(`${API}/athletes/${id}/gamelog?${Q}&season=${season}`);
   const names = gl.names || [];
@@ -424,14 +461,14 @@ async function loadPlayer(id, name, team, season){
     for (const cat of st.categories || [])
       for (const ev of cat.events || []){
         const meta = (gl.events || {})[ev.eventId] || {};
-        games.push({d: meta.gameDate || "", opp:(meta.opponent||{}).abbreviation || "",
+        games.push({eid: String(ev.eventId), d: meta.gameDate || "", opp:(meta.opponent||{}).abbreviation || "",
           min:num(ev.stats,"minutes"), pts:num(ev.stats,"points"), reb:num(ev.stats,"totalRebounds"),
           ast:num(ev.stats,"assists"), stl:num(ev.stats,"steals"), blk:num(ev.stats,"blocks"),
           tpm:num(ev.stats,"threePointFieldGoalsMade-threePointFieldGoalsAttempted")});
       }
   }
   games.sort((x,y) => x.d < y.d ? -1 : 1);
-  return {id: String(id), name, team, games};
+  return {id: String(id), name, team, games, base: BASES[String(id)]};
 }
 
 async function fetchPlayers(season, page, limit){
@@ -447,7 +484,9 @@ let morePage = 0;
 async function tryLive(){
   for (const season of [2027, 2026]){
     try {
-      const players = (await fetchPlayers(season, 1, 100)).filter(p => p.games.length >= 3 && qualifies(p));
+      if (season === 2027){ try { BASES = await fetchBases(); } catch (e) { BASES = {}; } }
+      else BASES = {};
+      const players = (await fetchPlayers(season, 1, 100)).filter(p => p.games.length >= 1 && qualifies(p));
       if (players.length < 8) continue;
       const label = season === 2027 ? "2026-27" : "2025-26";
       data = {seasonLabel: label, season, live:true, players};
@@ -457,7 +496,9 @@ async function tryLive(){
       moreBtn.hidden = false;
       document.getElementById("mkt").classList.add("live");
       mktTxt.textContent = `LIVE FEED · ${label} SEASON`;
-      foot.textContent = `Price is a player's last-10-game average for the chosen stat; Δ% is that form against their season average. Board floor: 15+ minutes and 8+ points a game. Unofficial fan project. Stats: ESPN public API, ${label} regular season, fetched live on page load.`;
+      foot.textContent = season === 2027
+        ? `L10 is a player's average over his last 10 games this season (or all of them, early on). Δ% compares that to last season's average until he has 10 games, then to this season's. IPO means no NBA history yet. Board floor: 15+ minutes and 8+ points a game. Unofficial fan project. Stats: ESPN public API, ${label} regular season, fetched live.`
+        : `L10 is a player's last-10-game average for the chosen stat; Δ% is that form against their season average. Board floor: 15+ minutes and 8+ points a game. Unofficial fan project. Stats: ESPN public API, ${label} regular season, fetched live.`;
       render();
       return;
     } catch (e) { /* blocked or down — keep the snapshot */ }
@@ -469,7 +510,7 @@ async function loadMore(){
   try {
     const have = new Set(data.players.map(p => p.id));
     const batch = await fetchPlayers(data.season, morePage++, 25);
-    const add = batch.filter(p => p.games.length >= 3 && qualifies(p) && !have.has(p.id));
+    const add = batch.filter(p => p.games.length >= 1 && qualifies(p) && !have.has(p.id));
     data.players = data.players.concat(add);
     makeSymbols(data.players);
     render();
@@ -486,6 +527,7 @@ const SB = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba";
 // Player of the Night: best Hollinger game score across everyone in today's box scores.
 // The most recent completed night's winner wears the ★ POTN badge until someone takes it.
 let potnWinnerId = null;
+let todayPotn = false;    // tonight's leader owns the tile once the box scores show one
 const potnBadge = (id) => id === potnWinnerId ? ' <span class="potnb" title="Reigning Player of the Night">★ POTN</span>' : "";
 
 function gsLine(keys, sv){
@@ -508,16 +550,25 @@ function setPotn(b, final){
   potnLine.innerHTML = `Impact ${f1(b.gs)}<br>${b.pts} PTS, ${b.reb} REB, ${b.ast} AST`;
 }
 
+let pollGen = 0;          // a poll that started before a newer one, or before the board reloaded, throws its results away
 async function pollLive(){
+  const gen = ++pollGen, board0 = data;
+  const stale = () => gen !== pollGen || data !== board0;
   let events;
   try { events = (await j(`${SB}/scoreboard`)).events || []; }
   catch (e) { return; }               // fetch blocked or feed down — no live layer
+  if (stale()) return;
   if (!events.length){ liveMap = {}; return; }
+
+  // pull every started game's box score at once
+  const started = events.filter(e => e.status.type.state !== "pre");
+  const sums = await Promise.all(started.map(e => j(`${SB}/summary?event=${e.id}`).catch(() => null)));
+  if (stale()) return;
 
   const boardIds = new Set(data.players.map(p => String(p.id)));
   const newMap = {};
   const extras = [];   // anyone in tonight's box scores who has scored but isn't on the board yet
-  const evHtml = [];   // this poll's plays, for the tape feed
+  const inGame = [];   // [id, name, line] for the play feed
   let best = null;
   for (const e of events){
     const st = e.status.type;         // state: pre | in | post
@@ -530,51 +581,52 @@ async function pollLive(){
         const mine = teams.find(t => t.abbreviation === p.team || t.displayName === p.team);
         if (!mine || newMap[p.id]) continue;
         const opp = teams.find(t => t !== mine);
-        newMap[p.id] = {state:"pre", detail: when, opp: opp ? opp.abbreviation : ""};
+        newMap[p.id] = {state:"pre", detail: when, opp: opp ? opp.abbreviation : "", team: mine.abbreviation};
       }
       continue;
     }
-    // in progress or final today: pull the box score
-    try {
-      const sum = await j(`${SB}/summary?event=${e.id}`);
-      for (const t of (sum.boxscore && sum.boxscore.players) || []){
-        const stats = (t.statistics || [])[0];
-        if (!stats) continue;
-        const keys = stats.keys || [];
-        const opp = teams.find(x => x.id !== t.team.id);
-        for (const a of stats.athletes || []){
-          const id = String(a.athlete.id);
-          const sv = a.stats || [];
-          const num = k => { const i = keys.indexOf(k); const v = parseFloat(String(sv[i] ?? "").split("-")[0]); return isNaN(v) ? 0 : v; };
-          const b = gsLine(keys, sv);
-          if (b && (!best || b.gs > best.gs)) best = {...b, id, name: a.athlete.displayName};
-          const line = {state: st.state, detail: st.shortDetail || "", opp: opp ? opp.abbreviation : "",
-            min:num("minutes"), pts:num("points"), reb:num("rebounds"), ast:num("assists"),
-            stl:num("steals"), blk:num("blocks"),
-            tpm:num("threePointFieldGoalsMade-threePointFieldGoalsAttempted")};
-          if (line.state === "in") evHtml.push(...emitEvents(id, a.athlete.displayName, line));
-          if (boardIds.has(id)) newMap[id] = line;
-          else if (line.pts > 0 && !autoTried.has(id))
-            extras.push({id, name: a.athlete.displayName, team: (t.team || {}).abbreviation || "", line});
-        }
+    const sum = sums[started.indexOf(e)];
+    if (!sum) continue;               // one game's box score failing shouldn't kill the rest
+    for (const t of (sum.boxscore && sum.boxscore.players) || []){
+      const stats = (t.statistics || [])[0];
+      if (!stats) continue;
+      const keys = stats.keys || [];
+      const opp = teams.find(x => x.id !== t.team.id);
+      for (const a of stats.athletes || []){
+        const id = String(a.athlete.id);
+        const sv = a.stats || [];
+        const num = k => { const i = keys.indexOf(k); const v = parseFloat(String(sv[i] ?? "").split("-")[0]); return isNaN(v) ? 0 : v; };
+        const b = gsLine(keys, sv);
+        if (b && (!best || b.gs > best.gs)) best = {...b, id, name: a.athlete.displayName};
+        const line = {eid: String(e.id), state: st.state, detail: st.shortDetail || "", opp: opp ? opp.abbreviation : "", team: (t.team || {}).abbreviation || "",
+          min:num("minutes"), pts:num("points"), reb:num("rebounds"), ast:num("assists"),
+          stl:num("steals"), blk:num("blocks"),
+          tpm:num("threePointFieldGoalsMade-threePointFieldGoalsAttempted")};
+        if (line.state === "in") inGame.push([id, a.athlete.displayName, line]);
+        if (boardIds.has(id)) newMap[id] = line;
+        else if (line.pts > 0 && !autoTried.has(id))
+          extras.push({id, name: a.athlete.displayName, team: (t.team || {}).abbreviation || "", line});
       }
-    } catch (e) { /* one game's box score failing shouldn't kill the rest */ }
+    }
   }
   // once someone scores tonight, they join the board (with their season log) and go live
   if (extras.length){
-    await Promise.all(extras.map(async x => {
-      autoTried.add(x.id);
-      try {
-        const p = await loadPlayer(x.id, x.name, x.team, data.season);
-        if (!data.players.some(q => String(q.id) === String(x.id))) data.players.push(p);
-        newMap[x.id] = x.line;
-      } catch (e) { /* no log; they'll retry never, board players unaffected */ }
-    }));
+    for (const x of extras) autoTried.add(x.id);
+    const loaded = await Promise.all(extras.map(x => loadPlayer(x.id, x.name, x.team, data.season).catch(() => null)));
+    if (stale()){ for (const x of extras) autoTried.delete(x.id); return; }
+    extras.forEach((x, i) => {
+      const p = loaded[i];
+      if (!p) return;                 // no season log; board players unaffected
+      if (!data.players.some(q => String(q.id) === x.id)) data.players.push(p);
+      newMap[x.id] = x.line;
+    });
     makeSymbols(data.players);
   }
+  const evHtml = inGame.flatMap(([id, name, line]) => emitEvents(id, name, line));
   liveMap = newMap;
   if (best){
     const allFinal = events.every(e => e.status.type.state === "post");
+    todayPotn = true;
     setPotn(best, allFinal);
     if (allFinal) potnWinnerId = best.id;
   }
@@ -613,7 +665,7 @@ async function pollLive(){
     playQueue.length = 0;
   }
   const mkt = document.getElementById("mkt");
-  const board = ` · PRICED OFF ${data.seasonLabel}`;
+  const board = ` · ${data.seasonLabel} SEASON`;
   if (nIn){
     mkt.classList.add("live");
     mktTxt.textContent = `MARKET OPEN · ${nIn} LIVE GAME${nIn > 1 ? "S" : ""}` + board;
@@ -639,7 +691,7 @@ function runDemo(){
   curr.hidden = false;
   currGames.hidden = true;
   document.getElementById("mkt").classList.add("live");
-  mktTxt.textContent = `MARKET OPEN · DEMO — SIMULATED ${p.sym} GAME`;
+  mktTxt.textContent = `MARKET OPEN · DEMO — SIMULATED ${p.name.toUpperCase()} GAME`;
   foot.textContent = "Demo mode: this game is simulated to show how live updates look. Remove #demo from the address for real data.";
   let q = 1, secLeft = 720;
   const timer = setInterval(() => {
@@ -694,8 +746,10 @@ async function fetchReigning(){
     }
     if (best && !potnWinnerId){
       potnWinnerId = best.id;
-      setPotn(best, true);
-      potnLbl.textContent = "Reigning Player of the Night";
+      if (!todayPotn){
+        setPotn(best, true);
+        potnLbl.textContent = "Reigning Player of the Night";
+      }
       render();
     }
   } catch (e) { /* no feed, no badge */ }

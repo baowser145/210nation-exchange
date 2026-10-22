@@ -1,4 +1,4 @@
-# Hardwood Exchange
+# The 210Nation Exchange
 
 NBA player stats tracked like a stock exchange: a scrolling ticker tape, hot/cold
 "price" moves, sparklines, and full-season charts for every rotation player (15+ min, 8+ pts).
