@@ -85,6 +85,7 @@ button:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
 .who .sym{color:var(--amber);font-weight:600}
 .who .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;font-size:12px}
 .who .tm{color:var(--dim);font-size:10px;letter-spacing:.08em}
+.nw{white-space:nowrap}
 .cell{text-align:right;white-space:nowrap}
 .last{color:var(--dim)}
 .px{font-weight:600}
@@ -122,13 +123,14 @@ footer{color:var(--dim);font-size:11px;margin-top:22px;max-width:70ch}
   .idx .lbl{font-size:9px;letter-spacing:.1em}
   .hd{display:none}
   .rk{display:none}
-  .row{grid-template-areas:"who who who who" ". last px chg";grid-template-columns:1fr 58px 64px 86px;gap:6px 8px;padding:11px 10px}
+  .row{grid-template-areas:"who last px chg";grid-template-columns:minmax(0,1fr) 42px 46px 54px;gap:7px;padding:10px}
   .row .who{grid-area:who}
   .row .c-last{grid-area:last}
   .row .c-px{grid-area:px}
   .row .c-chg{grid-area:chg}
-  .row .cell::before{content:attr(data-l);display:block;font-size:9px;font-weight:400;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);margin-bottom:2px}
-  .who .nm{font-size:13px}
+  .row .cell::before{content:attr(data-l);display:block;font-size:8.5px;font-weight:400;letter-spacing:.02em;text-transform:uppercase;color:var(--dim);margin-bottom:2px}
+  .who .nm{font-size:12px;white-space:normal}
+  .row .cell{font-size:12px}
   .sechd{padding:7px 10px}
   .detail{margin:9px -10px -11px}
 }
@@ -302,8 +304,8 @@ function render(){
         prevLive[key] = lv;
         lastCell = `<span class="livepx${flash}">${fi(lv)}</span>`;
         liveLine = l.state === "in"
-          ? ` · <span class="ldot">●</span> LIVE · ${l.score}`
-          : ` · FINAL · ${l.score}`;
+          ? ` · <span class="ldot">●</span> LIVE · <span class="nw">${l.score}</span>`
+          : ` · FINAL · <span class="nw">${l.score}</span>`;
       }
     }
     return `
