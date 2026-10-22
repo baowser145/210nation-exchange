@@ -72,7 +72,7 @@ button:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
 
 /* board */
 .board{border:1px solid var(--line);background:var(--panel)}
-.row,.hd{display:grid;grid-template-columns:30px minmax(130px,1.5fr) 110px 56px 70px 92px;gap:10px;align-items:center;padding:9px 14px}
+.row,.hd{display:grid;grid-template-columns:30px minmax(130px,1fr) 64px 84px 92px;gap:10px;align-items:center;padding:9px 14px}
 .hd{font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--dim);border-bottom:1px solid var(--line);position:sticky;top:env(safe-area-inset-top,0px);background:var(--panel);z-index:2}
 .row{border-bottom:1px solid var(--line);cursor:pointer;background:none;border-inline:0;border-top:0;width:100%;text-align:left;font:inherit;color:inherit}
 .row:last-of-type{border-bottom:0}
@@ -85,8 +85,6 @@ button:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
 .who .sym{color:var(--amber);font-weight:600}
 .who .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;font-size:12px}
 .who .tm{color:var(--dim);font-size:10px;letter-spacing:.08em}
-.spark{height:30px}
-.spark svg{display:block;width:100%;height:30px}
 .cell{text-align:right;white-space:nowrap}
 .last{color:var(--dim)}
 .px{font-weight:600}
@@ -124,9 +122,8 @@ footer{color:var(--dim);font-size:11px;margin-top:22px;max-width:70ch}
   .idx .lbl{font-size:9px;letter-spacing:.1em}
   .hd{display:none}
   .rk{display:none}
-  .row{grid-template-areas:"who who who who" "spark last px chg";grid-template-columns:1fr 40px 50px 86px;gap:6px 8px;padding:11px 10px}
+  .row{grid-template-areas:"who who who who" ". last px chg";grid-template-columns:1fr 44px 54px 86px;gap:6px 8px;padding:11px 10px}
   .row .who{grid-area:who}
-  .row .spark{grid-area:spark}
   .row .c-last{grid-area:last}
   .row .c-px{grid-area:px}
   .row .c-chg{grid-area:chg}
@@ -155,7 +152,7 @@ footer{color:var(--dim);font-size:11px;margin-top:22px;max-width:70ch}
 <div class="err" id="err"></div>
 
 <div class="board" id="board">
-  <div class="hd"><span class="rk">#</span><span>Player</span><span>Last 15</span><span class="cell c-last">Last</span><span class="cell c-px">L10</span><span class="cell c-chg">Δ%</span></div>
+  <div class="hd"><span class="rk">#</span><span>Player</span><span class="cell c-last">Last</span><span class="cell c-px">AVG L10</span><span class="cell c-chg">Δ%</span></div>
   <div id="rows"></div>
 </div>
 <button class="more" id="moreBtn" hidden>Load 25 more</button>
@@ -264,25 +261,6 @@ const sgn = (x) => (x >= 0 ? "+" : "−") + Math.abs(x).toFixed(1);
 const cls = (x) => Math.abs(x) < 0.05 ? "flat" : x > 0 ? "up" : "down";
 const arrow = (x) => Math.abs(x) < 0.05 ? "·" : x > 0 ? "▲" : "▼";
 
-/* ---------- sparkline ---------- */
-function sparkSVG(v, chgClass){
-  const pts = v.slice(-15);
-  if (pts.length < 2) return "";
-  const w = 110, h = 30, pad = 2;
-  const hi = Math.max(...pts), lo = Math.min(...pts);
-  const y = (x) => hi === lo ? h/2 : pad + (h - 2*pad) * (1 - (x - lo) / (hi - lo));
-  const step = (w - 2*pad) / (pts.length - 1);
-  const coords = pts.map((p,i) => [pad + i*step, y(p)]);
-  const line = coords.map(c => c.map(n=>n.toFixed(1)).join(",")).join(" ");
-  const col = chgClass === "flat" ? "var(--dim)" : chgClass === "up" ? "var(--up)" : "var(--down)";
-  const [ex, ey] = coords[coords.length-1];
-  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="last 15 games trend">
-    <polygon points="${pad},${h} ${line} ${w-pad},${h}" fill="${col}" opacity="0.12"/>
-    <polyline points="${line}" fill="none" stroke="${col}" stroke-width="1.5"/>
-    <circle cx="${ex.toFixed(1)}" cy="${ey.toFixed(1)}" r="2.4" fill="${col}"/>
-  </svg>`;
-}
-
 /* ---------- render ---------- */
 function render(){
   const players = data.players.map(p => ({p, m: metrics(p)}));
@@ -323,7 +301,6 @@ function render(){
     <button class="row" data-id="${p.id}" aria-expanded="${p.id===openId}">
       <span class="rk num">${i+1}</span>
       <span class="who"><span class="nm">${p.name}${potnBadge(p.id)}</span><span class="tm">${(l && l.team) || p.team} · ${m.v.length} GP${liveLine}</span></span>
-      <span class="spark">${sparkSVG(m.v, cls(m.chg))}</span>
       <span class="cell num last c-last">${lastCell}</span>
       <span class="cell num px c-px">${f1(m.l10)}</span>
       ${m.pct === null ? '<span class="cell c-chg flat" title="Shows once he has 11+ games">—</span>' : `<span class="cell num c-chg ${cls(m.chg)}">${arrow(m.chg)} ${sgn(m.pct)}%</span>`}
