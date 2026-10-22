@@ -285,7 +285,7 @@ function render(){
     const l = liveMap[p.id];
     let liveLine = "", lastCell = fi(m.last);
     if (l){
-      if (l.state === "pre") liveLine = ` · <span class="ldot">●</span> TONIGHT ${l.detail} vs ${l.opp}`;
+      if (l.state === "pre") liveLine = ` · TONIGHT ${l.detail} vs ${l.opp}`;
       else {
         const lv = liveVal(l);
         const key = p.id + ":" + statKey;
@@ -293,14 +293,14 @@ function render(){
         prevLive[key] = lv;
         lastCell = `<span class="livepx${flash}">${fi(lv)}</span>`;
         liveLine = l.state === "in"
-          ? ` · <span class="ldot">●</span> LIVE ${l.detail} vs ${l.opp}`
-          : ` · FINAL vs ${l.opp}`;
+          ? ` · <span class="ldot">●</span> LIVE · ${l.score} ${l.opp}`
+          : ` · FINAL · ${l.score} ${l.opp}`;
       }
     }
     return `
     <button class="row" data-id="${p.id}" aria-expanded="${p.id===openId}">
       <span class="rk num">${i+1}</span>
-      <span class="who"><span class="nm">${p.name}${potnBadge(p.id)}</span><span class="tm">${(l && l.team) || p.team} · ${m.v.length} GP${liveLine}</span></span>
+      <span class="who"><span class="nm">${p.name} (${(l && l.team) || p.team})${potnBadge(p.id)}</span><span class="tm">${m.v.length} GP${liveLine}</span></span>
       <span class="cell num last c-last">${lastCell}</span>
       <span class="cell num px c-px">${f1(m.l10)}</span>
       ${m.pct === null ? '<span class="cell c-chg flat" title="Shows once he has 11+ games">—</span>' : `<span class="cell num c-chg ${cls(m.chg)}">${arrow(m.chg)} ${sgn(m.pct)}%</span>`}
@@ -567,6 +567,9 @@ async function pollLive(){
       if (!stats) continue;
       const keys = stats.keys || [];
       const opp = teams.find(x => x.id !== t.team.id);
+      const cs = comp.competitors || [];
+      const myScore = (cs.find(c => c.team.id === t.team.id) || {}).score ?? "";
+      const oppScore = (cs.find(c => c.team.id !== t.team.id) || {}).score ?? "";
       for (const a of stats.athletes || []){
         const id = String(a.athlete.id);
         const sv = a.stats || [];
@@ -574,6 +577,7 @@ async function pollLive(){
         const b = gsLine(keys, sv);
         if (b && (!best || b.gs > best.gs)) best = {...b, id, name: a.athlete.displayName};
         const line = {eid: String(e.id), state: st.state, detail: st.shortDetail || "", opp: opp ? opp.abbreviation : "", team: (t.team || {}).abbreviation || "",
+          score: `${myScore}-${oppScore}`,
           min:num("minutes"), pts:num("points"), reb:num("rebounds"), ast:num("assists"),
           stl:num("steals"), blk:num("blocks"),
           tpm:num("threePointFieldGoalsMade-threePointFieldGoalsAttempted"), gs: b ? b.gs : 0};
