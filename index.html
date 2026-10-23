@@ -67,6 +67,8 @@ h1 .x{color:var(--amber)}
 .ctrl{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
 .tabs{display:flex;gap:4px;flex-wrap:wrap}
 .tabs button{font:inherit;font-size:12px;background:var(--panel);color:var(--dim);border:1px solid var(--line);padding:6px 13px;cursor:pointer}
+.view{margin-left:auto}
+.view button{padding-inline:11px}
 .tabs button[aria-pressed="true"]{color:#121212;background:var(--amber);border-color:var(--amber);font-weight:600}
 button:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
 
@@ -78,6 +80,7 @@ button:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
 .row:last-of-type{border-bottom:0}
 .row:hover{background:var(--panel2)}
 .rk{color:var(--dim);font-size:11px}
+.empty{padding:18px 14px;color:var(--dim)}
 .sechd{padding:7px 14px;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--amber);background:var(--panel2);border-bottom:1px solid var(--line)}
 .more{display:block;width:100%;font:inherit;font-size:11px;letter-spacing:.14em;text-transform:uppercase;background:var(--panel);color:var(--dim);border:1px solid var(--line);border-top:0;padding:10px;cursor:pointer}
 .more:hover{color:var(--amber)}
@@ -132,6 +135,7 @@ footer{color:var(--dim);font-size:11px;margin-top:22px;max-width:70ch}
   .who .nm{font-size:12px;white-space:normal}
   .row .cell{font-size:12px}
   .sechd{padding:7px 10px}
+  .view{margin-left:0}
   .detail{margin:9px -10px -11px}
 }
 </style>
@@ -143,13 +147,16 @@ footer{color:var(--dim);font-size:11px;margin-top:22px;max-width:70ch}
 </header>
 <div class="strip">
   <div class="idx" id="potn" hidden><span class="lbl" id="potnLbl">Player of the Night</span><div class="val" id="potnName">—</div><div class="chg num" id="potnLine"></div></div>
-  <div class="idx"><span class="lbl">Top Gainer</span><div class="val" id="gainer">—</div><div class="chg num" id="gainerChg"></div></div>
-  <div class="idx"><span class="lbl">Top Decliner</span><div class="val" id="loser">—</div><div class="chg num" id="loserChg"></div></div>
+  <div class="idx"><span class="lbl" id="gainerLbl">Top Gainer</span><div class="val" id="gainer">—</div><div class="chg num" id="gainerChg"></div></div>
+  <div class="idx"><span class="lbl" id="loserLbl">Top Decliner</span><div class="val" id="loser">—</div><div class="chg num" id="loserChg"></div></div>
   <div class="idx" id="curr" hidden><span class="lbl">Current</span><div class="games num" id="currGames"></div><div id="currPlay"></div></div>
 </div>
 
 <div class="ctrl">
   <div class="tabs" id="tabs" role="group" aria-label="Stat"></div>
+  <div class="tabs view" id="view" role="group" aria-label="Players" hidden>
+    <button data-view="all" aria-pressed="true">All</button><button data-view="rookies" aria-pressed="false">Rookies</button>
+  </div>
 </div>
 
 <div class="err" id="err"></div>
@@ -272,8 +279,11 @@ const arrow = (x) => Math.abs(x) < 0.05 ? "·" : x > 0 ? "▲" : "▼";
 
 /* ---------- render ---------- */
 function render(){
-  const players = data.players.map(p => ({p, m: metrics(p)}));
+  const rookiesOnly = view === "rookies";
+  const players = (rookiesOnly ? known().filter(p => ROOKIES.has(String(p.id))) : data.players).map(p => ({p, m: metrics(p)}));
   const pctKey = x => x.m.pct ?? -Infinity;
+  gainerLbl.textContent = rookiesOnly ? "Top Rookie Gainer" : "Top Gainer";
+  loserLbl.textContent = rookiesOnly ? "Top Rookie Decliner" : "Top Decliner";
   players.sort((a,b) => (pctKey(b) - pctKey(a)) || (b.m.l10 - a.m.l10));
 
   // movers
@@ -333,9 +343,11 @@ function render(){
   } else {
     rows.innerHTML = players.map(rowHTML).join("");
   }
+  if (!players.length)
+    rows.innerHTML = `<div class="empty">${rookiesOnly && !rookiesReady ? "Finding this season's rookies…" : "No players to show yet."}</div>`;
 
   if (openId){
-    const p = data.players.find(x => x.id === openId);
+    const p = known().find(x => x.id === openId);
     if (p) drawChart(document.getElementById("ch-"+p.id), p);
   }
 }
@@ -407,6 +419,19 @@ tabsEl.addEventListener("click", e => {
   for (const x of tabsEl.children) x.setAttribute("aria-pressed", x === b);
   render();
 });
+let view = "all";
+try { if (localStorage.getItem("hwx-view") === "rookies") view = "rookies"; } catch (e) {}
+const viewEl = document.getElementById("view");
+const syncView = () => { for (const b of viewEl.children) b.setAttribute("aria-pressed", b.dataset.view === view); };
+syncView();
+viewEl.addEventListener("click", e => {
+  const b = e.target.closest("button[data-view]"); if (!b) return;
+  view = b.dataset.view;
+  try { localStorage.setItem("hwx-view", view); } catch (err) {}
+  syncView();
+  render();
+  if (view === "rookies") markRookies().then(render);
+});
 document.getElementById("rows").addEventListener("click", e => {
   const r = e.target.closest(".row"); if (!r) return;
   openId = openId === r.dataset.id ? null : r.dataset.id;
@@ -427,6 +452,53 @@ function useSnapshot(){
 const API = "https://site.web.api.espn.com/apis/common/v3/sports/basketball/nba";
 const Q = "region=us&lang=en&contentorigin=espn";
 async function j(url){ const r = await fetch(url); if (!r.ok) throw new Error(r.status); return r.json(); }
+
+// Rookies, found the first time someone opens the Rookies view:
+//  1. everyone with NBA games in 2018-19 through 2025-26 is a veteran (one leaderboard request per season)
+//  2. everyone else who has played this season gets an exact check: drafted in 2026, or undrafted with no
+//     experience (ESPN also reports 0 years for players back from overseas, which step 1 rules out)
+//  3. rookies outside the main board are loaded into their own pool
+const ROOKIES = new Set();
+const rookiePool = new Map();    // rookies who aren't on the main board, id -> player
+let rookieJob = null, rookiesReady = false;
+const known = () => data.players.concat([...rookiePool.values()].filter(p => !data.players.some(q => String(q.id) === String(p.id))));
+function markRookies(){
+  if (data.season !== 2027) return Promise.resolve();
+  if (!rookieJob) rookieJob = (async () => {
+    const board0 = data;
+    const prior = new Set();
+    const seasons = [2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026];
+    const [, current] = await Promise.all([
+      Promise.all(seasons.map(s => j(`${API}/statistics/byathlete?${Q}&limit=1000&sort=offensive.avgPoints:desc&season=${s}&seasontype=2`)
+        .then(d => (d.athletes || []).forEach(r => prior.add(String(r.athlete.id)))).catch(() => {}))),
+      j(`${API}/statistics/byathlete?${Q}&limit=1000&sort=offensive.avgPoints:desc&season=2027&seasontype=2`).catch(() => ({athletes: []})),
+    ]);
+    const seen = new Map();
+    for (const r of current.athletes || []) seen.set(String(r.athlete.id), {name: r.athlete.displayName, team: r.athlete.teamShortName || ""});
+    for (const p of data.players) if (!seen.has(String(p.id))) seen.set(String(p.id), {name: p.name, team: p.team});
+    const candidates = [...seen.keys()].filter(id => !prior.has(id));
+    await Promise.all(candidates.map(id =>
+      j(`https://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/${id}`).then(a => {
+        const draftYear = (a.draft || {}).year;
+        if (draftYear === 2026 || (!draftYear && (a.experience || {}).years === 0)) ROOKIES.add(id);
+      }).catch(() => {})));
+    const missing = [...ROOKIES].filter(id => !data.players.some(p => String(p.id) === id));
+    const loaded = await Promise.all(missing.map(id => loadPlayer(id, seen.get(id).name, seen.get(id).team, 2027).catch(() => null)));
+    if (data !== board0) return;
+    for (const p of loaded) if (p && p.games.length) rookiePool.set(String(p.id), p);
+    makeSymbols(known());
+    rookiesReady = true;
+  })();
+  return rookieJob;
+}
+// a scorer added mid-game who isn't a veteran on our list yet: one exact check
+async function checkRookie(id){
+  if (!rookiesReady || ROOKIES.has(id)) return;
+  try {
+    const a = await j(`https://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/${id}`);
+    if ((a.draft || {}).year === 2026) ROOKIES.add(id);
+  } catch (e) {}
+}
 
 async function loadPlayer(id, name, team, season){
   const gl = await j(`${API}/athletes/${id}/gamelog?${Q}&season=${season}`);
@@ -479,6 +551,7 @@ async function tryLive(){
       makeSymbols(data.players);
       morePage = 5;                       // pages of 25; first 100 are loaded
       tabsEl.querySelector('[data-stat="imp"]').hidden = false;
+      if (season === 2027){ viewEl.hidden = false; if (view === "rookies") markRookies().then(render); }
       moreBtn.hidden = false;
       document.getElementById("mkt").classList.add("live");
       mktTxt.textContent = `LIVE FEED · ${label} SEASON`;
@@ -551,7 +624,7 @@ async function pollLive(){
   const sums = await Promise.all(started.map(e => j(`${SB}/summary?event=${e.id}`).catch(() => null)));
   if (stale()) return;
 
-  const boardIds = new Set(data.players.map(p => String(p.id)));
+  const boardIds = new Set(known().map(p => String(p.id)));
   const newMap = {};
   const extras = [];   // anyone in tonight's box scores who has scored but isn't on the board yet
   const inGame = [];   // [id, name, line] for the play feed
@@ -563,7 +636,7 @@ async function pollLive(){
     if (st.state === "pre"){
       // tag board players by team; tip time without the date prefix
       const when = (st.shortDetail || "").replace(/^\d+\/\d+ - /, "");
-      for (const p of data.players){
+      for (const p of known()){
         const mine = teams.find(t => t.abbreviation === p.team || t.displayName === p.team);
         if (!mine || newMap[p.id]) continue;
         const opp = teams.find(t => t !== mine);
@@ -611,6 +684,7 @@ async function pollLive(){
       newMap[x.id] = x.line;
     });
     makeSymbols(data.players);
+    Promise.all(extras.map(x => checkRookie(x.id))).then(render);
   }
   const evHtml = inGame.flatMap(([id, name, line]) => emitEvents(id, name, line));
   liveMap = newMap;
